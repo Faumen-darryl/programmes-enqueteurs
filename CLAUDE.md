@@ -51,10 +51,27 @@ Les chiffres de la maquette (noms de courses, commandes, horaires) sont des exem
 - Source : jeu « Arrêts et lignes associées » d'Île-de-France Mobilités (données ouvertes, licence ODbL, à citer). CSV séparé par `;`, colonnes `route_id, route_long_name, stop_id, stop_name, stop_lon, stop_lat, OperatorName, shortName, bookingRules, mode, Pointgeo, Nom_commune, Code_insee`.
 - Il donne les couples ligne ↔ arrêt avec coordonnées, **mais pas l'ordre des arrêts, ni le sens, ni les horaires**.
 - Correspondance = autre ligne ayant un arrêt à 150 mètres ou moins (distance de haversine) d'un arrêt de la ligne ; le détail va jusqu'à 300 mètres. Le rayon est un réglage de l'écran 1 : précalculer les distances jusqu'à 300 mètres et filtrer côté navigateur.
-- Libellés : bus = `shortName` ; « RER B », « Métro 12 », « Tramway T6 », « Transilien N » pour le reste.
-- `correspondances.py` (déjà écrit) fait ce calcul pour une ligne et contient l'ordre vérifié des arrêts de la **394** (`ORDRE_394`), les alias de noms entre fiche horaire et jeu de données (`ALIAS_394`) et des cas particuliers (ex. « Brosselette » est une faute dans le jeu IDFM). À transformer en script de génération de données pour toutes les lignes.
+- Libellés : bus = `shortName` ; « RER B », « Métro 12 », « Métro 3bis », « Tramway T6 », « Transilien N », « TER Normandie » (nom long), « Câble C1 », « Funiculaire de Montmartre », « CDG VAL », « ORLYVAL ».
+- Le numéro seul n'identifie pas une ligne de bus (55 lignes « Soir », 24 « TàD », deux lignes 45, la 6 de remplacement du métro…) : l'identifiant est le `route_id` sans le préfixe `IDFM:` (ex. `C01319` pour la 394). Pour choisir une ligne, afficher aussi le nom long, l'exploitant et les communes.
+- `scripts/construire_donnees.py` (étape 2, faite) remplace l'ancien `correspondances.py` pour toutes les lignes. Il lit `data/brut/arrets-lignes.csv` et écrit `static/donnees/` en 5 secondes environ. Les données générées **sont versionnées** (environ 20 mégaoctets, 2,4 une fois compressés) : le CSV ne l'est pas, donc GitHub Actions ne peut pas les régénérer. Après chaque nouveau CSV : relancer le script, lancer les tests, versionner `static/donnees/`.
+- Arrêts : les quais (`stop_id`) de même nom à 400 mètres ou moins les uns des autres (de proche en proche) forment un arrêt. Des homonymes éloignés (« Mairie » dans 9 villages sur une même ligne) deviennent « Mairie (Balloy) », etc.
+- Ordre connu : un fichier par ligne dans `data/ordres/` (sens, arrêts dans l'ordre de la fiche horaire, alias fiche → jeu, remarques). Seule la **394** en a un (`data/ordres/394.json`, fiches valables à partir du 24 août 2026). Les arrêts y portent le nom de la fiche horaire, le nom du jeu reste dans `nomIdfm`.
+- Fautes du jeu corrigées partout dans `data/corrections_noms.json` (« Brosselette » → « Brossolette » : 394, 195, 432, 441, N32).
 - Pour toutes les autres lignes, l'ordre des arrêts et les horaires demandent le **GTFS** (Datahub d'Île-de-France Mobilités). Tant qu'il n'est pas intégré, lister les arrêts de ces lignes de façon claire comme « ordre non disponible » plutôt que d'inventer un ordre.
 - Le téléchargement du CSV doit se faire depuis un poste ayant accès à `data.iledefrance-mobilites.fr`. Ne pas le versionner s'il est lourd (dossier `data/brut/` ignoré par git).
+
+### Format des données générées (lu par le JavaScript)
+
+`static/donnees/lignes.json` : `{ source, genereLe, rayonMaximum: 300, lignes: [...] }`, chaque ligne :
+`{ id, libelle, nom, famille, operateur, demande, remplacement, arrets, ordre, fichier, communes }`
+- `famille` : `bus`, `rer`, `train` (Transilien et TER), `metro`, `tramway`, `navette`, `cable`, `funiculaire`. Pastille bleu clair pour `bus`, bleu foncé pour les autres.
+- `demande` : transport à la demande (réservation). `remplacement` : bus de remplacement d'un métro, RER ou tramway. `ordre` : ordre des arrêts connu. `fichier` : un fichier de ligne existe (bus seulement).
+
+`static/donnees/lignes/<id>.json` (lignes de bus) :
+`{ id, libelle, nom, famille, operateur, demande, ordre, arrets: [...] }`
+- `ordre` : `null` (arrêts par ordre alphabétique, afficher « ordre non disponible ») ou `{ source, sens: [{ nom: "vers Bourg-la-Reine", arrets: [indices dans arrets] }] }`.
+- arrêt : `{ nom, nomIdfm?, communes, quais: [stop_id], lat, lon, remarque?, correspondances }`.
+- `correspondances` : `[[id de l'autre ligne, nom de l'arrêt sur cette ligne, distance en mètres]]`, la plus proche par ligne, jusqu'à 300 mètres, triées par distance. Le nom est exactement le `nom` de l'arrêt dans le fichier de l'autre ligne : il sert de pivot.
 
 ## Architecture (confirmée par Darryl le 8 novembre 2026)
 
@@ -95,7 +112,7 @@ Exemple de la maquette : course « Hauts-de-Seine sud » = 394 (240), 14 (75), 1
 ## Ordre de réalisation conseillé
 
 1. Squelette de l'application, mise en page (barre latérale, pastilles, boutons) et déploiement sur GitHub Pages. *Fait le 8 novembre 2026 ; reste à comparer à la maquette.*
-2. Script de génération des données pour toutes les lignes.
+2. Script de génération des données pour toutes les lignes. *Fait le 8 novembre 2026.*
 3. Écran 1 : lignes, arrêts, correspondances, rayon réglable.
 4. Écran 3 et 2b : courses, stockage dans le navigateur, import/export JSON.
 5. Écran 2 : construction d'un programme avec pivots, quotas, contrôle du surplus.

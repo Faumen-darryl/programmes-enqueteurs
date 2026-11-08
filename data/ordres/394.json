@@ -1,0 +1,86 @@
+{
+  "ligne": "394",
+  "route_id": "IDFM:C01319",
+  "source": "Fiches horaires PDF de la ligne 394, valables à partir du 24 août 2026",
+  "sens": [
+    {
+      "nom": "vers Bourg-la-Reine",
+      "arrets": [
+        "Gare d'Issy-Val de Seine",
+        "Corentin Celton - Métro",
+        "Rosier Rouge",
+        "Jules Guesde",
+        "Général de Gaulle",
+        "Gare de Clamart",
+        "Piscine",
+        "Félix Faure",
+        "Centre de Châtillon",
+        "Centre de Châtillon - Marché",
+        "Division Leclerc - Brossolette",
+        "Les Sablons",
+        "Centre Bus",
+        "Division Leclerc",
+        "Division Leclerc - Fosse Bazin",
+        "Stade du Panorama",
+        "Léonie Laporte",
+        "Tennis - Général Leclerc",
+        "Jacquemin",
+        "André Salel",
+        "Carnot - Jean Jaurès",
+        "Château Sainte-Barbe",
+        "Fontenay-aux-Roses RER",
+        "Gambetta",
+        "Léon Blum",
+        "Les Blagis",
+        "Bourg-la-Reine RER"
+      ]
+    },
+    {
+      "nom": "vers Issy-Val de Seine",
+      "arrets": [
+        "Bourg-la-Reine RER",
+        "Les Blagis",
+        "Léon Blum",
+        "Gambetta",
+        "Fontenay-aux-Roses RER",
+        "Château Sainte-Barbe",
+        "Mairie de Fontenay-aux-Roses",
+        "André Salel",
+        "Jacquemin",
+        "Tennis - Général Leclerc",
+        "Léonie Laporte",
+        "Stade du Panorama",
+        "Division Leclerc",
+        "Centre Bus",
+        "Les Sablons",
+        "Division Leclerc - Brossolette",
+        "Centre de Châtillon - Marché",
+        "Centre de Châtillon",
+        "Félix Faure",
+        "Piscine",
+        "Colonel Fabien",
+        "Hébert",
+        "Hébert - Gare",
+        "Général de Gaulle",
+        "Jules Guesde",
+        "Rosier Rouge",
+        "Corentin Celton - Métro",
+        "Gare d'Issy-Val de Seine"
+      ]
+    }
+  ],
+  "alias": {
+    "Gare d'Issy-Val de Seine": "Issy - Val de Seine RER",
+    "Bourg-la-Reine RER": "Gare de Bourg-la-Reine",
+    "Mairie de Fontenay-aux-Roses": "Mairie"
+  },
+  "remarques": {
+    "Mairie de Fontenay-aux-Roses": "Figure sur la fiche sens Issy mais sans aucun passage dans les horaires",
+    "Gare de Clamart": "Desservi uniquement vers Bourg-la-Reine",
+    "Division Leclerc - Fosse Bazin": "Desservi uniquement vers Bourg-la-Reine",
+    "Carnot - Jean Jaurès": "Desservi uniquement vers Bourg-la-Reine",
+    "Colonel Fabien": "Desservi uniquement vers Issy-Val de Seine",
+    "Hébert": "Desservi uniquement vers Issy-Val de Seine",
+    "Hébert - Gare": "Desservi uniquement vers Issy-Val de Seine"
+  }
+}

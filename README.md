@@ -39,3 +39,16 @@ Le site GitHub Pages gratuit est public. Le dépôt ne contient que des données
 ## Données
 
 Lignes et arrêts : jeu « Arrêts et lignes associées » d'Île-de-France Mobilités, données ouvertes sous licence ODbL.
+
+## Mettre à jour les données
+
+1. Télécharger l'export CSV du jeu « Arrêts et lignes associées » sur data.iledefrance-mobilites.fr et l'enregistrer sous `data/brut/arrets-lignes.csv` (ce dossier n'est pas versionné).
+2. Générer les données :
+
+   ```bash
+   .venv/bin/python scripts/construire_donnees.py
+   ```
+
+3. Lancer les tests, puis versionner `static/donnees/`.
+
+L'ordre vérifié des arrêts d'une ligne se décrit dans `data/ordres/<ligne>.json` (voir `data/ordres/394.json`).
