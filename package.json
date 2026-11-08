@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Uniquement pour les tests des calculs JavaScript (node --test) : le site n'a pas d'étape de construction.",
+  "scripts": {
+    "test": "node --test tests/js/*.test.mjs"
+  }
+}

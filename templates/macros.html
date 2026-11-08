@@ -13,7 +13,22 @@
   "succes": '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 10"/>',
   "alerte": '<path d="M10.3 4.2 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.8" r="0.6"/>',
   "information": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r="0.6"/>',
+  "fermer": '<path d="M6 6l12 12M18 6 6 18"/>',
+  "recherche": '<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/>',
+  "modifier": '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z"/><path d="m14.5 7.5 3 3"/>',
+  "supprimer": '<path d="M4.5 7h15"/><path d="M9.5 7V4.5h5V7"/><path d="M6.5 7l1 13h9l1-13"/>',
+  "fleche": '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+  "arret": '<circle cx="12" cy="10" r="3"/><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/>',
+  "horloge": '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  "etoile": '<path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.8z"/>',
 } %}
+
+{#- Jeu d'icônes réutilisé par le JavaScript : <svg><use href="#icone-nom"/></svg> -#}
+{% macro sprite_icones() -%}
+<svg xmlns="http://www.w3.org/2000/svg" style="position: absolute; width: 0; height: 0; overflow: hidden" aria-hidden="true">
+  {% for nom, chemins in ICONES.items() %}<symbol id="icone-{{ nom }}" viewBox="0 0 24 24">{{ chemins | safe }}</symbol>{% endfor %}
+</svg>
+{%- endmacro %}
 
 {% macro icone(nom, taille=20) -%}
 <svg class="icone" width="{{ taille }}" height="{{ taille }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ ICONES[nom] | safe }}</svg>
@@ -45,17 +60,3 @@
 <span class="etiquette etiquette--{{ ton }}">{{ texte }}</span>
 {%- endmacro %}
 
-{#- Carte affichée tant qu'un écran n'est pas construit. -#}
-{% macro ecran_a_venir(etape, elements, prealable=None) -%}
-<section class="carte ecran-a-venir">
-  <div class="ecran-a-venir__entete">
-    {{ etiquette(etape, "neutre") }}
-    <h2>Écran en préparation</h2>
-  </div>
-  <p class="ecran-a-venir__intro">Cet écran contiendra :</p>
-  <ul class="liste-points">
-    {% for element in elements %}<li>{{ element }}</li>{% endfor %}
-  </ul>
-  {% if prealable %}<p class="ecran-a-venir__prealable">{{ icone("information", 18) }}<span>{{ prealable }}</span></p>{% endif %}
-</section>
-{%- endmacro %}

@@ -28,7 +28,14 @@ jobs:
       - name: Installer les dépendances
         run: pip install -r requirements-dev.txt
 
-      - name: Lancer les tests
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Tests des calculs (JavaScript)
+        run: node --test tests/js/*.test.mjs
+
+      - name: Tests des pages et des données (Python)
         run: pytest
 
       - id: pages

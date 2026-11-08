@@ -68,10 +68,10 @@ def test_page_affichee_en_francais(client, adresse, titre):
     assert "family=Inter" in html
 
 
-@pytest.mark.parametrize("adresse", PAGES)
-def test_lien_actif_dans_la_barre_laterale(client, adresse):
+@pytest.mark.parametrize("adresse, actifs", [("/", 1), ("/programme/", 1), ("/courses/", 1), ("/composants/", 0)])
+def test_lien_actif_dans_la_barre_laterale(client, adresse, actifs):
     html = client.get(adresse).get_data(as_text=True)
-    assert html.count('aria-current="page"') == 1
+    assert html.count('aria-current="page"') == actifs
 
 
 @pytest.mark.parametrize("adresse", PAGES)

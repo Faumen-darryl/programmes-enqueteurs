@@ -1,16 +1,21 @@
 {% extends "base.html" %}
-{% from "macros.html" import ecran_a_venir %}
 
 {% block sous_titre %}
 <p class="entete-page__description">Choisir une ligne, voir ses arrêts et leurs correspondances, et repérer les arrêts de pivot.</p>
 {% endblock %}
 
 {% block contenu %}
-{{ ecran_a_venir("Étape 3", [
-  "le choix d'une ligne parmi toutes les lignes d'Île-de-France Mobilités ;",
-  "les arrêts de la ligne dans l'ordre, avec leurs correspondances : RER, métro, tramway et train séparés des bus ;",
-  "un rayon de correspondance réglable, de 150 mètres par défaut jusqu'à 300 mètres ;",
-  "le détail d'un arrêt et le bouton « Utiliser comme arrêt de pivot » ;",
-  "la mention « ordre non disponible » pour les lignes dont l'ordre des arrêts n'est pas encore connu.",
-], "Prérequis : les données des lignes et des arrêts (étape 2).") }}
+<section class="carte barre-choix">
+  <label class="etiquette-champ" for="recherche-ligne">Ligne de bus</label>
+  <div id="emplacement-choix" class="barre-choix__champ"></div>
+  <label class="case-a-cocher">
+    <input type="checkbox" id="inclure-speciales">
+    <span>Inclure le transport à la demande et les bus de remplacement</span>
+  </label>
+</section>
+<div id="contenu-ligne" class="contenu-ligne"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ url_for('static', filename='js/ecran-lignes.js') }}"></script>
 {% endblock %}

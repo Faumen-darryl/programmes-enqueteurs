@@ -20,7 +20,7 @@ Elle aide à construire les programmes des enquêteurs qui mesurent le taux de f
 3. Un petit reste (par exemple 45 enquêtes) ne remplit pas une journée : on le combine avec le reste d'une autre ligne en chaînant les deux lignes par un pivot, jusqu'à atteindre le total d'un programme.
 4. Le début et la fin d'un programme doivent être faciles d'accès : afficher la gare de RER, la station de métro ou l'arrêt de tramway le plus proche (distance en mètres), avertir s'il n'y en a pas.
 5. Un programme est enregistré dans une course. Le total des quotas par heure doit être égal au nombre d'enquêtes du programme.
-6. Une course peut être téléchargée en **un seul fichier** : la course, toutes ses lignes, tous les programmes de chaque ligne (arrêts, horaires, quotas par heure). Format proposé : classeur Excel, une feuille de synthèse + une feuille par ligne (à confirmer avec Darryl).
+6. Une course peut être téléchargée en **un seul fichier** : la course, toutes ses lignes, tous les programmes de chaque ligne (arrêts, horaires, quotas par heure). Fait selon le format proposé (classeur Excel : une feuille « Synthèse » + une feuille par ligne avec chaque programme, ses arrêts, son accès ou son pivot, ses horaires et ses quotas par heure) ; Darryl ne l'a pas encore validé.
 
 ## Règles d'interface
 
@@ -81,16 +81,23 @@ Les chiffres de la maquette (noms de courses, commandes, horaires) sont des exem
 - Composants Jinja dans `templates/macros.html` : `pastille_ligne`, `bouton`, `message`, `etiquette`, `icone`. La page `/composants/` les montre tous.
 - Couleurs dans `static/css/application.css` sous forme de variables (`--texte`, `--primaire`, etc.), reprises des jetons ci-dessus.
 - `scripts/construire_donnees.py` → `static/donnees/lignes.json` (index des lignes) et `static/donnees/lignes/<ligne>.json` (arrêts, ordre si connu, correspondances avec distances jusqu'à 300 mètres).
-- Courses et programmes : enregistrés dans le navigateur (`localStorage`), avec import et export JSON pour les transférer d'un poste à l'autre.
+- Courses et programmes : enregistrés dans le navigateur (`localStorage`, clé `programmes-enqueteurs/courses`), avec import et export JSON pour les transférer d'un poste à l'autre. Le pivot retenu dans l'écran 1 est sous `programmes-enqueteurs/pivot-retenu`.
+- JavaScript (modules ES, sans construction) dans `static/js/` :
+  - `calculs.js` : règles métier pures (heures et tranches, répartition des quotas, état des lignes, contrôle d'un programme, pivots, accès gare, suggestions). Aucun accès à la page : c'est lui qu'on teste.
+  - `donnees.js` (chargement et recherche des lignes), `stockage.js` (courses, import, export, exemple de la maquette), `interface.js` (éléments, pastilles, fenêtres, notifications, liste de choix d'une ligne).
+  - Un fichier par écran : `ecran-lignes.js`, `ecran-courses.js` (avec la fenêtre 2b), `ecran-programme.js` ; `excel.js` charge `vendor/exceljs.min.js` (ExcelJS 4.4.0, licence MIT) seulement au téléchargement.
+  - Navigation par l'ancre de l'adresse : `/#ligne=C01319&arret=…&sens=…&rayon=…`, `/courses/#course=<id>` (`#creer=1` ouvre la fenêtre), `/programme/#course=<id>` (nouveau), `&programme=<id>` (modification), `&suggestion=C01319:75,C01215:45` (pré-rempli).
+- Règles appliquées par `verifierProgramme` : bloquent l'enregistrement le surplus sur une ligne (règle 1), un total de quotas différent des enquêtes du segment (règle 5), un segment incomplet ou qui commence avant la fin du précédent ; simples alertes : total différent des enquêtes par programme, durée différente de la durée prévue, pivot à plus de 150 mètres.
 - **Confidentialité** : GitHub Pages gratuit est public. Aucune donnée client (commandes, courses, programmes) ne doit être dans le dépôt, seulement les données ouvertes. Le `.gitignore` exclut `*.xlsx`, `*.xls`, `exports/` et `courses*.json` ; un test vérifie qu'aucun fichier Excel ou CSV n'est dans `static/`.
-- Tests : `pytest` (pages affichées, lien actif, absence d'abréviations, site figé sous un sous-dossier). Ils tournent avant chaque déploiement.
+- Tests : `node --test tests/js/*.test.mjs` (calculs : quotas, surplus, pivots, suggestion de la maquette) et `pytest` (pages affichées, lien actif, absence d'abréviations dans les gabarits, site figé sous un sous-dossier, données générées). Ils tournent avant chaque déploiement. Les textes écrits par le JavaScript ne sont pas couverts par `pytest` : les vérifier dans un navigateur (Playwright) après chaque changement d'interface.
 
 Commandes :
 
 ```bash
 python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/flask --app app run --debug        # développement, http://127.0.0.1:5000
-.venv/bin/pytest                             # tests
+.venv/bin/pytest                             # tests Python
+node --test tests/js/*.test.mjs              # tests des calculs
 .venv/bin/python figer.py                    # site statique dans build/
 ```
 
@@ -100,12 +107,12 @@ python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 Course    { id, nom, enquetesParProgramme: 120, dureeProgrammeHeures: 7,
             lignes: [{ ligne, commandees }], programmes: Programme[] }
 Programme { id, numero, segments: Segment[] }
-Segment   { ligne, sens, arretDepart, arretFin, debut, fin,
-            quotas: [{ debut, fin, enquetes }] }
+Segment   { ligne, sens, arretDepart, arretFin, debut: "07:00", fin: "11:30", enquetes,
+            quotas: [{ debut, fin, enquetes }] }   // tranches coupées aux heures rondes
 ```
 
 Calculs : programmées(ligne) = somme des enquêtes des segments de cette ligne ; restantes = commandées − programmées (jamais négatif, bloquer l'enregistrement sinon) ; programmes nécessaires = ⌈total commandé ÷ enquêtes par programme⌉.
-Suggestion : paires de lignes de la course dont les restes sont inférieurs à un programme, qui ont un pivot à 150 mètres ou moins, et dont la somme se rapproche de 120.
+Suggestion : paires de lignes de la course dont les restes sont inférieurs à un programme, qui ont un pivot à 150 mètres ou moins, et dont la somme se rapproche de 120. Sont aussi proposés : un programme plein sur une ligne qui a encore 120 enquêtes ou plus, un petit reste complété par une partie d'une grosse ligne, et en dernier recours un petit reste seul. Classement : écart à 120, puis paire, plein, complément, seul, puis distance du pivot. La ligne qui a le plus d'enquêtes passe en premier.
 
 Exemple de la maquette : course « Hauts-de-Seine sud » = 394 (240), 14 (75), 195 (45), soit 360 enquêtes et 3 programmes. Programme 1 : 394 seule (120). Programme 2 : 394 (45) puis 14 (75), pivot Stade du Panorama. Programme 3 suggéré : 394 (75) puis 195 (45), pivot Division Leclerc.
 
@@ -113,10 +120,12 @@ Exemple de la maquette : course « Hauts-de-Seine sud » = 394 (240), 14 (75), 1
 
 1. Squelette de l'application, mise en page (barre latérale, pastilles, boutons) et déploiement sur GitHub Pages. *Fait le 8 novembre 2026 ; reste à comparer à la maquette.*
 2. Script de génération des données pour toutes les lignes. *Fait le 8 novembre 2026.*
-3. Écran 1 : lignes, arrêts, correspondances, rayon réglable.
-4. Écran 3 et 2b : courses, stockage dans le navigateur, import/export JSON.
-5. Écran 2 : construction d'un programme avec pivots, quotas, contrôle du surplus.
-6. Téléchargement de la course complète en Excel (généré dans le navigateur, puisque le site n'a pas de serveur).
+3. Écran 1 : lignes, arrêts, correspondances, rayon réglable. *Fait le 8 novembre 2026.*
+4. Écran 3 et 2b : courses, stockage dans le navigateur, import/export JSON. *Fait le 8 novembre 2026.*
+5. Écran 2 : construction d'un programme avec pivots, quotas, contrôle du surplus. *Fait le 8 novembre 2026.*
+6. Téléchargement de la course complète en Excel (généré dans le navigateur, puisque le site n'a pas de serveur). *Fait le 8 novembre 2026.*
 7. Horaires et ordre des arrêts de toutes les lignes avec le GTFS.
 
 Avant de coder une étape, confirmer avec Darryl les points marqués « à confirmer ».
+
+**Consigne de Darryl (8 novembre 2026)** : il veut un outil qui fonctionne, pas des pages qui décrivent ce qui viendra. Ne jamais livrer d'écran « en préparation » : construire la fonction, la tester dans un navigateur, puis la montrer. La page `/composants/` reste accessible par son adresse mais n'est plus dans la barre latérale.

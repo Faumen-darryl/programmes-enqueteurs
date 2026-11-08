@@ -1,16 +1,13 @@
 {% extends "base.html" %}
-{% from "macros.html" import ecran_a_venir %}
 
 {% block sous_titre %}
 <p class="entete-page__description">Composer la journée d'un enquêteur : segments sur une ou plusieurs lignes, arrêts de pivot et quotas par heure.</p>
 {% endblock %}
 
 {% block contenu %}
-{{ ecran_a_venir("Étape 5", [
-  "le choix de la course et le reste à programmer pour chaque ligne ;",
-  "le parcours en segments, reliés par des arrêts de pivot ;",
-  "les quotas par heure, dont le total doit être égal au nombre d'enquêtes du programme ;",
-  "le blocage de l'enregistrement si une ligne dépasse le nombre d'enquêtes commandées ;",
-  "la gare de RER, la station de métro ou l'arrêt de tramway le plus proche du début et de la fin du programme.",
-], "Prérequis : les écrans Lignes et correspondances (étape 3) et Courses (étape 4).") }}
+<div id="ecran-programme"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ url_for('static', filename='js/ecran-programme.js') }}"></script>
 {% endblock %}

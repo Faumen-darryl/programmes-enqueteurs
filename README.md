@@ -4,6 +4,15 @@ Outil web, pour ordinateur, qui aide à construire les programmes des enquêteur
 
 Le site est écrit avec Flask, puis transformé en fichiers statiques et publié gratuitement sur GitHub Pages. Il n'y a pas de serveur : les courses et les programmes restent dans le navigateur de chaque poste.
 
+## Utiliser l'outil
+
+1. **Courses** : « Créer une course » (nom, enquêtes par programme, durée, lignes et enquêtes commandées). Pour essayer, « Charger l'exemple de la maquette » crée la course Hauts-de-Seine sud (394, 14, 195).
+2. La course affiche le reste à programmer par ligne et **le programme suivant suggéré** (restes combinés par un pivot). « Construire ce programme » ouvre le programme pré-rempli.
+3. **Construire un programme** : pour chaque segment, la ligne, le sens, les arrêts de départ et de fin, les horaires, le nombre d'enquêtes et les quotas par heure (répartis automatiquement, modifiables). Entre deux segments, choisir l'arrêt de pivot. L'enregistrement est bloqué s'il y a un surplus sur une ligne ou si les quotas ne tombent pas juste.
+4. **Lignes et correspondances** : rechercher une ligne, voir ses arrêts et leurs correspondances, régler le rayon, retenir un arrêt de pivot.
+5. **Télécharger la course complète** : un fichier Excel avec une feuille de synthèse et une feuille par ligne.
+6. **Exporter / Importer** : pour passer les courses d'un poste à l'autre (fichier JSON). Les courses ne quittent jamais le navigateur autrement.
+
 ## Travailler en local
 
 ```bash
@@ -18,6 +27,7 @@ Lancer les tests :
 
 ```bash
 .venv/bin/pytest
+node --test tests/js/*.test.mjs
 ```
 
 Générer le site statique dans `build/` :

@@ -1,16 +1,20 @@
 {% extends "base.html" %}
-{% from "macros.html" import ecran_a_venir %}
+{% from "macros.html" import icone %}
 
 {% block sous_titre %}
-<p class="entete-page__description">Les courses commandées par le client, leurs lignes et les programmes déjà construits.</p>
+<p class="entete-page__description">Les courses commandées par le client, leurs lignes et les programmes déjà construits. Elles sont enregistrées dans ce navigateur.</p>
+{% endblock %}
+
+{% block actions %}
+<button class="bouton bouton--discret" type="button" id="importer-courses">{{ icone("importer", 18) }}<span>Importer</span></button>
+<button class="bouton bouton--discret" type="button" id="exporter-courses">{{ icone("telecharger", 18) }}<span>Exporter</span></button>
+<button class="bouton bouton--primaire" type="button" id="creer-course">{{ icone("ajouter", 18) }}<span>Créer une course</span></button>
 {% endblock %}
 
 {% block contenu %}
-{{ ecran_a_venir("Étape 4", [
-  "la liste des courses, les lignes de chaque course et les programmes de chaque ligne ;",
-  "la création d'une course : nom, enquêtes par programme, durée, lignes et enquêtes commandées ;",
-  "la suggestion du programme suivant à partir des restes à combiner ;",
-  "l'enregistrement dans ce navigateur, avec import et export pour passer d'un poste à l'autre ;",
-  "le bouton « Télécharger la course complète » en un seul fichier (étape 6).",
-], "Les courses et les programmes resteront dans le navigateur : ils ne sont jamais publiés sur le site.") }}
+<div id="ecran-courses"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ url_for('static', filename='js/ecran-courses.js') }}"></script>
 {% endblock %}

@@ -1,4 +1,4 @@
-{% from "macros.html" import icone %}
+{% from "macros.html" import icone, sprite_icones %}
 <!doctype html>
 <html lang="fr">
 <head>
@@ -10,7 +10,11 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/application.css') }}">
 </head>
-<body>
+<body data-url-donnees="{{ url_for('static', filename='donnees/lignes.json') }}"
+      data-url-lignes="{{ url_for('lignes') }}"
+      data-url-courses="{{ url_for('courses') }}"
+      data-url-programme="{{ url_for('programme') }}">
+  {{ sprite_icones() }}
   <div class="application">
     <aside class="barre-laterale">
       <div class="barre-laterale__interieur">
@@ -32,10 +36,6 @@
         </nav>
 
         <div class="barre-laterale__pied">
-          <a class="navigation__lien navigation__lien--discret{% if request.endpoint == 'composants' %} est-actif{% endif %}"
-             href="{{ url_for('composants') }}"{% if request.endpoint == 'composants' %} aria-current="page"{% endif %}>
-            {{ icone("composants", 18) }}<span>Composants de l'interface</span>
-          </a>
           <p class="mention-donnees">
             Données des lignes et des arrêts : <span class="sans-coupure">Île-de-France Mobilités</span>, données ouvertes sous licence ODbL.
           </p>
@@ -51,6 +51,7 @@
         </div>
         <div class="entete-page__actions">{% block actions %}{% endblock %}</div>
       </header>
+      <noscript><div class="message message--alerte"><p>Cet outil a besoin de JavaScript : activez-le dans le navigateur.</p></div></noscript>
       {% block contenu %}{% endblock %}
     </main>
   </div>
