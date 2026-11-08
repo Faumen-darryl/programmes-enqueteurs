@@ -1,0 +1,61 @@
+{#- Composants de l'interface. Les exemples sont visibles sur la page /composants/. -#}
+
+{% set ICONES = {
+  "bus": '<rect x="5" y="3" width="14" height="15" rx="3"/><path d="M5 11h14"/><path d="M9 6.5h6"/><circle cx="8.5" cy="14.5" r="0.6"/><circle cx="15.5" cy="14.5" r="0.6"/><path d="M7.5 18v2.5M16.5 18v2.5"/>',
+  "lignes": '<path d="M4 12h16"/><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M12 5v5"/>',
+  "programme": '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 2.5h6v3.5H9z"/><path d="M8.5 11h7M8.5 14.5h7M8.5 18h4"/>',
+  "courses": '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  "composants": '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><circle cx="16.5" cy="16.5" r="3.5"/>',
+  "telecharger": '<path d="M12 4v11"/><path d="m7.5 10.5 4.5 4.5 4.5-4.5"/><path d="M5 20h14"/>',
+  "importer": '<path d="M12 15V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M5 20h14"/>',
+  "ajouter": '<path d="M12 5v14M5 12h14"/>',
+  "pivot": '<path d="M5 8h13"/><path d="m15 4.5 3.5 3.5-3.5 3.5"/><path d="M19 16H6"/><path d="m9 12.5-3.5 3.5 3.5 3.5"/>',
+  "succes": '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 10"/>',
+  "alerte": '<path d="M10.3 4.2 2.9 17.5A2 2 0 0 0 4.6 20.5h14.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.8" r="0.6"/>',
+  "information": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5"/><circle cx="12" cy="7.8" r="0.6"/>',
+} %}
+
+{% macro icone(nom, taille=20) -%}
+<svg class="icone" width="{{ taille }}" height="{{ taille }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{{ ICONES[nom] | safe }}</svg>
+{%- endmacro %}
+
+{#- Pastille de ligne. mode : « bus », ou « rer », « metro », « tramway », « train » (lignes ferrées). -#}
+{% macro pastille_ligne(libelle, mode="bus") -%}
+<span class="pastille {{ 'pastille--bus' if mode == 'bus' else 'pastille--ferree' }}">{{ libelle }}</span>
+{%- endmacro %}
+
+{#- Bouton. variante : « primaire », « secondaire » ou « discret ». Avec href, c'est un lien. -#}
+{% macro bouton(texte, variante="primaire", icone_nom=None, href=None, desactive=False, type="button") -%}
+{%- set classes = "bouton bouton--" ~ variante -%}
+{%- if href and not desactive -%}
+<a class="{{ classes }}" href="{{ href }}">{% if icone_nom %}{{ icone(icone_nom, 18) }}{% endif %}<span>{{ texte }}</span></a>
+{%- else -%}
+<button class="{{ classes }}" type="{{ type }}"{% if desactive %} disabled{% endif %}>{% if icone_nom %}{{ icone(icone_nom, 18) }}{% endif %}<span>{{ texte }}</span></button>
+{%- endif -%}
+{%- endmacro %}
+
+{#- Message. ton : « succes », « alerte » ou « information ». -#}
+{% macro message(texte, ton="information") -%}
+<div class="message message--{{ ton }}" role="{{ 'alert' if ton == 'alerte' else 'status' }}">
+  {{ icone(ton, 20) }}<p>{{ texte }}</p>
+</div>
+{%- endmacro %}
+
+{% macro etiquette(texte, ton="neutre") -%}
+<span class="etiquette etiquette--{{ ton }}">{{ texte }}</span>
+{%- endmacro %}
+
+{#- Carte affichée tant qu'un écran n'est pas construit. -#}
+{% macro ecran_a_venir(etape, elements, prealable=None) -%}
+<section class="carte ecran-a-venir">
+  <div class="ecran-a-venir__entete">
+    {{ etiquette(etape, "neutre") }}
+    <h2>Écran en préparation</h2>
+  </div>
+  <p class="ecran-a-venir__intro">Cet écran contiendra :</p>
+  <ul class="liste-points">
+    {% for element in elements %}<li>{{ element }}</li>{% endfor %}
+  </ul>
+  {% if prealable %}<p class="ecran-a-venir__prealable">{{ icone("information", 18) }}<span>{{ prealable }}</span></p>{% endif %}
+</section>
+{%- endmacro %}

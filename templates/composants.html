@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "macros.html" import pastille_ligne, bouton, message, etiquette %}
+
+{% block sous_titre %}
+<p class="entete-page__description">Pastilles, boutons, messages et couleurs utilisés dans tous les écrans. Les valeurs affichées sont des exemples.</p>
+{% endblock %}
+
+{% block contenu %}
+<div class="grille-composants">
+  <section class="carte">
+    <h2 class="carte__titre">Pastilles de ligne</h2>
+    <p class="carte__aide">Bus : fond bleu clair, bordure bleue, texte bleu foncé. Train, métro et tramway : fond bleu foncé, texte blanc.</p>
+    <div class="rangee">
+      {{ pastille_ligne("394") }}
+      {{ pastille_ligne("14") }}
+      {{ pastille_ligne("195") }}
+      {{ pastille_ligne("N63") }}
+    </div>
+    <div class="rangee">
+      {{ pastille_ligne("RER B", "rer") }}
+      {{ pastille_ligne("Métro 12", "metro") }}
+      {{ pastille_ligne("Tramway T6", "tramway") }}
+      {{ pastille_ligne("Transilien N", "train") }}
+    </div>
+  </section>
+
+  <section class="carte">
+    <h2 class="carte__titre">Boutons</h2>
+    <p class="carte__aide">Un seul bouton principal par zone ; le bouton secondaire pour les autres actions.</p>
+    <div class="rangee">
+      {{ bouton("Créer une course", "primaire", "ajouter") }}
+      {{ bouton("Télécharger la course complète", "secondaire", "telecharger") }}
+    </div>
+    <div class="rangee">
+      {{ bouton("Utiliser comme arrêt de pivot", "secondaire", "pivot") }}
+      {{ bouton("Importer des courses", "discret", "importer") }}
+      {{ bouton("Enregistrer le programme", "primaire", desactive=True) }}
+    </div>
+  </section>
+
+  <section class="carte">
+    <h2 class="carte__titre">Messages</h2>
+    <div class="pile">
+      {{ message("Total du programme : 120 enquêtes sur 120.", "succes") }}
+      {{ message("Aucune gare de RER, station de métro ou arrêt de tramway à moins de 300 mètres.", "alerte") }}
+      {{ message("Ordre des arrêts non disponible pour cette ligne.", "information") }}
+    </div>
+  </section>
+
+  <section class="carte">
+    <h2 class="carte__titre">Étiquettes et textes</h2>
+    <div class="rangee">
+      {{ etiquette("Complet", "succes") }}
+      {{ etiquette("45 enquêtes restantes", "alerte") }}
+      {{ etiquette("Étape 3", "neutre") }}
+    </div>
+    <dl class="exemples-textes">
+      <div><dt>Texte</dt><dd class="texte">Stade du Panorama</dd></div>
+      <div><dt>Texte secondaire</dt><dd class="texte-secondaire">Arrêt de pivot entre la 394 et la 14</dd></div>
+      <div><dt>Sans correspondance</dt><dd class="texte-discret">Aucune correspondance</dd></div>
+    </dl>
+  </section>
+
+  <section class="carte carte--large">
+    <h2 class="carte__titre">Couleurs</h2>
+    <ul class="nuancier">
+      {% for nom, variable, valeur in [
+        ("Texte", "texte", "#0F2A52"),
+        ("Texte secondaire", "texte-secondaire", "#5B6B82"),
+        ("Texte discret", "texte-discret", "#98A5B8"),
+        ("Primaire", "primaire", "#2563C9"),
+        ("Primaire foncé", "primaire-fonce", "#1F4E8C"),
+        ("Bleu clair", "bleu-clair", "#EAF1FB"),
+        ("Bordure", "bordure", "#D5E2F5"),
+        ("Fond de page", "fond-page", "#F5F8FD"),
+        ("Succès", "succes", "#1E8A5A"),
+        ("Fond succès", "succes-fond", "#E3F4EC"),
+        ("Alerte", "alerte", "#B7791F"),
+        ("Fond alerte", "alerte-fond", "#FDF3DC"),
+      ] %}
+      <li class="nuancier__case">
+        <span class="nuancier__couleur" style="background: var(--{{ variable }})"></span>
+        <span class="nuancier__nom">{{ nom }}</span>
+        <code>{{ valeur }}</code>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,19 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Site généré par figer.py
+build/
+
+# Données brutes téléchargées (lourdes, à ne pas versionner)
+data/brut/*
+!data/brut/.gitkeep
+
+# Confidentialité : aucune donnée client dans le dépôt public
+# (courses, programmes, commandes, exports Excel ou JSON)
+*.xlsx
+*.xls
+exports/
+courses*.json

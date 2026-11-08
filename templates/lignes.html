@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "macros.html" import ecran_a_venir %}
+
+{% block sous_titre %}
+<p class="entete-page__description">Choisir une ligne, voir ses arrêts et leurs correspondances, et repérer les arrêts de pivot.</p>
+{% endblock %}
+
+{% block contenu %}
+{{ ecran_a_venir("Étape 3", [
+  "le choix d'une ligne parmi toutes les lignes d'Île-de-France Mobilités ;",
+  "les arrêts de la ligne dans l'ordre, avec leurs correspondances : RER, métro, tramway et train séparés des bus ;",
+  "un rayon de correspondance réglable, de 150 mètres par défaut jusqu'à 300 mètres ;",
+  "le détail d'un arrêt et le bouton « Utiliser comme arrêt de pivot » ;",
+  "la mention « ordre non disponible » pour les lignes dont l'ordre des arrêts n'est pas encore connu.",
+], "Prérequis : les données des lignes et des arrêts (étape 2).") }}
+{% endblock %}

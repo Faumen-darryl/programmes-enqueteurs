@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% from "macros.html" import ecran_a_venir %}
+
+{% block sous_titre %}
+<p class="entete-page__description">Les courses commandées par le client, leurs lignes et les programmes déjà construits.</p>
+{% endblock %}
+
+{% block contenu %}
+{{ ecran_a_venir("Étape 4", [
+  "la liste des courses, les lignes de chaque course et les programmes de chaque ligne ;",
+  "la création d'une course : nom, enquêtes par programme, durée, lignes et enquêtes commandées ;",
+  "la suggestion du programme suivant à partir des restes à combiner ;",
+  "l'enregistrement dans ce navigateur, avec import et export pour passer d'un poste à l'autre ;",
+  "le bouton « Télécharger la course complète » en un seul fichier (étape 6).",
+], "Les courses et les programmes resteront dans le navigateur : ils ne sont jamais publiés sur le site.") }}
+{% endblock %}
