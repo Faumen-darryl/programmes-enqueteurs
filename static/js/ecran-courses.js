@@ -1,8 +1,8 @@
 // Écran 3 : courses, et fenêtre 2b « Créer une course ».
 
 import {
-  decoupage, etatLignes, pluriel, programmesNecessaires, prochainNumero, resumeCourse, suggestions, texteDuree,
-  totalProgramme, versMinutes,
+  decoupage, enquetesSegment, etatLignes, pluriel, programmesNecessaires, prochainNumero, resumeCourse, suggestions,
+  texteDuree, totalProgramme, versMinutes,
 } from "./calculs.js";
 import { chargerIndex, chargerLignes } from "./donnees.js";
 import {
@@ -54,7 +54,7 @@ function rendre() {
   if (!courses.length) {
     vider(racine, avertissement, el("section", { class: "carte" }, etatVide(
       "Aucune course pour l'instant",
-      "Créez votre première course avec les lignes et les enquêtes commandées par le client, importez un fichier exporté depuis un autre poste, ou chargez l'exemple de la maquette pour essayer l'outil.",
+      "Créez votre première course avec ses lignes et le nombre d'enquêtes à faire sur chacune, importez un fichier exporté depuis un autre poste, ou chargez l'exemple de la maquette pour essayer l'outil.",
       bouton("Créer une course", { variante: "primaire", nomIcone: "ajouter", onclick: () => ouvrirFenetreCourse(null) }),
       bouton("Importer des courses", { nomIcone: "importer", onclick: importer }),
       bouton("Charger l'exemple de la maquette", {
@@ -118,7 +118,7 @@ function detailCourse(course) {
           bouton("Modifier", { variante: "discret", nomIcone: "modifier", onclick: () => ouvrirFenetreCourse(course) }),
           bouton("Supprimer", { variante: "danger", nomIcone: "supprimer", onclick: () => supprimer(course) }))),
       el("div", { class: "tuiles" },
-        tuile("Enquêtes commandées", r.commandees),
+        tuile("Enquêtes à faire", r.commandees),
         tuile("Programmées", r.programmees),
         tuile("Restantes", r.restantes, r.restantes === 0 ? "succes" : null),
         tuile("Programmes", `${r.realises} sur ${r.necessaires}`)),
@@ -128,9 +128,9 @@ function detailCourse(course) {
     zoneSuggestion,
     el("section", { class: "carte" },
       el("h3", { class: "carte__titre", text: "Lignes de la course" }),
-      el("table", { class: "tableau" },
+      el("div", { class: "tableau-conteneur" }, el("table", { class: "tableau" },
         el("thead", {}, el("tr", {},
-          el("th", { text: "Ligne" }), el("th", { class: "nombre", text: "Commandées" }), el("th", { class: "nombre", text: "Programmées" }),
+          el("th", { text: "Ligne" }), el("th", { class: "nombre", text: "Enquêtes à faire" }), el("th", { class: "nombre", text: "Programmées" }),
           el("th", { class: "nombre", text: "Restantes" }), el("th", { text: "Reste à programmer" }), el("th", { text: "Programmes" }))),
         el("tbody", {}, etat.map((l) => {
           const ligne = ligneDe(l.ligne);
@@ -149,7 +149,7 @@ function detailCourse(course) {
             el("td", {}, el("div", { class: "rangee rangee--serree" },
               l.programmes.length ? l.programmes.map((p) => etiquette(`Programme ${p.numero} : ${p.enquetes}`, "neutre"))
                 : el("span", { class: "texte-discret", text: "Aucun programme" }))));
-        })))),
+        }))))),
     el("section", { class: "carte" },
       el("h3", { class: "carte__titre", text: "Programmes" }),
       course.programmes.length
@@ -167,7 +167,7 @@ function tuile(titre, valeur, ton = null) {
 async function remplirSuggestion(course, zone, urlProgramme) {
   const r = resumeCourse(course);
   if (r.restantes <= 0) {
-    vider(zone, message("Toutes les enquêtes commandées sont programmées. Vous pouvez télécharger la course complète.", "succes"));
+    vider(zone, message("Toutes les enquêtes à faire sont programmées. Vous pouvez télécharger la course complète.", "succes"));
     return;
   }
   vider(zone, etatAttente("Recherche du programme suivant…"));
@@ -239,7 +239,7 @@ function carteProgramme(course, programme, urlProgramme) {
         el("strong", { text: `${s.arretDepart} → ${s.arretFin}` }),
         el("span", { class: "texte-secondaire petit", text: [s.sens, `${s.debut} à ${s.fin}`].filter(Boolean).join(", ") }),
         el("span", { class: "quotas-resume", text: s.quotas.map((q) => `${q.debut} à ${q.fin} : ${q.enquetes}`).join(" ; ") })),
-      el("strong", { class: "segment-resume__nombre", text: texteEnquetes(s.enquetes) })));
+      el("strong", { class: "segment-resume__nombre", text: texteEnquetes(enquetesSegment(s)) })));
   });
   return el("article", { class: "carte-programme" },
     el("header", {},
@@ -301,7 +301,9 @@ async function importer() {
 
 // ---------- Fenêtre « Créer une course » ----------
 
-const DUREES = [7, 7.5, 8, 8.5, 9];
+const ENQUETES_MINIMUM = 50;
+const ENQUETES_MAXIMUM = 150;
+const DUREES = [5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9];
 
 function ouvrirFenetreCourse(course) {
   const modification = Boolean(course);
@@ -317,18 +319,19 @@ function ouvrirFenetreCourse(course) {
   const { corps, pied, fermer } = ouvrirFenetre(modification ? "Modifier la course" : "Créer une course", { large: true });
   const zoneErreurs = el("div");
   const champNom = el("input", { class: "champ", id: "course-nom", value: brouillon.nom, placeholder: "Par exemple : Hauts-de-Seine sud" });
-  const champEpp = el("input", { class: "champ champ--nombre", id: "course-epp", type: "number", min: "110", max: "130", step: "1", value: String(brouillon.enquetesParProgramme) });
+  const champEpp = el("input", { class: "champ champ--nombre", id: "course-epp", type: "number", min: String(ENQUETES_MINIMUM), max: String(ENQUETES_MAXIMUM), step: "1", value: String(brouillon.enquetesParProgramme) });
   const champDuree = el("select", { class: "champ", id: "course-duree" },
-    DUREES.map((d) => el("option", { value: String(d), selected: d === brouillon.dureeProgrammeHeures, text: texteDuree(d * 60) })));
+    [...new Set([...DUREES, brouillon.dureeProgrammeHeures])].sort((x, y) => x - y)
+      .map((d) => el("option", { value: String(d), selected: d === brouillon.dureeProgrammeHeures, text: texteDuree(Math.round(d * 60)) })));
   const zoneLignes = el("div", { class: "lignes-course" });
   const zoneResume = el("div", { class: "resume-course" });
 
   corps.append(zoneErreurs,
     el("div", { class: "formulaire" },
       el("div", { class: "champ-groupe champ-groupe--large" }, el("label", { class: "etiquette-champ", for: "course-nom", text: "Nom de la course" }), champNom),
-      el("div", { class: "champ-groupe" }, el("label", { class: "etiquette-champ", for: "course-epp", text: "Enquêtes par programme (110 à 130)" }), champEpp),
-      el("div", { class: "champ-groupe" }, el("label", { class: "etiquette-champ", for: "course-duree", text: "Durée d'un programme" }), champDuree)),
-    el("h3", { class: "sous-titre-fenetre", text: "Lignes et enquêtes commandées" }),
+      el("div", { class: "champ-groupe" }, el("label", { class: "etiquette-champ", for: "course-epp", text: `Enquêtes par programme (${ENQUETES_MINIMUM} à ${ENQUETES_MAXIMUM})` }), champEpp),
+      el("div", { class: "champ-groupe" }, el("label", { class: "etiquette-champ", for: "course-duree", text: "Durée d'un programme (5 à 9 heures)" }), champDuree)),
+    el("h3", { class: "sous-titre-fenetre", text: "Lignes et enquêtes à faire" }),
     zoneLignes,
     bouton("Ajouter une ligne", { variante: "discret", nomIcone: "ajouter", onclick: () => { rangees.push({ ligne: null, commandees: "" }); rendreLignes(true); } }),
     zoneResume);
@@ -337,7 +340,7 @@ function ouvrirFenetreCourse(course) {
 
   function rendreLignes(focusDerniere = false) {
     vider(zoneLignes,
-      el("div", { class: "lignes-course__entete" }, el("span", { text: "Ligne" }), el("span", { text: "Commandées" }), el("span", { text: "Programmes" }), el("span")),
+      el("div", { class: "lignes-course__entete" }, el("span", { text: "Ligne" }), el("span", { text: "Enquêtes à faire" }), el("span", { text: "Programmes" }), el("span")),
       rangees.map((rangee, i) => {
         const info = el("span", { class: "lignes-course__info" });
         const description = el("span", { class: "texte-secondaire petit", text: rangee.ligne ? descriptionLigne(rangee.ligne) : "" });
@@ -350,7 +353,7 @@ function ouvrirFenetreCourse(course) {
         });
         const champ = el("input", {
           class: "champ champ--nombre", type: "number", min: String(Math.max(1, programmees)), step: "1", value: String(rangee.commandees ?? ""),
-          "aria-label": "Enquêtes commandées",
+          "aria-label": "Enquêtes à faire",
           oninput: (e) => { rangee.commandees = e.target.value === "" ? "" : Number(e.target.value); majInfo(); },
         });
         function majInfo() {
@@ -380,7 +383,7 @@ function ouvrirFenetreCourse(course) {
     const restes = valides.map((r) => ({ ligne: r.ligne, reste: decoupage(Number(r.commandees), epp()).reste })).filter((r) => r.reste > 0);
     vider(zoneResume,
       el("div", { class: "tuiles tuiles--compactes" },
-        tuile("Enquêtes commandées", total),
+        tuile("Enquêtes à faire", total),
         tuile("Programmes nécessaires", programmesNecessaires(total, epp()))),
       el("div", { class: "resume-course__restes" },
         el("span", { class: "etiquette-champ", text: "Restes à combiner" }),
@@ -394,7 +397,7 @@ function ouvrirFenetreCourse(course) {
     const nom = champNom.value.trim();
     if (!nom) erreurs.push("Donnez un nom à la course.");
     const n = Number(champEpp.value);
-    if (!Number.isInteger(n) || n < 110 || n > 130) erreurs.push("Le nombre d'enquêtes par programme doit être entre 110 et 130.");
+    if (!Number.isInteger(n) || n < ENQUETES_MINIMUM || n > ENQUETES_MAXIMUM) erreurs.push(`Le nombre d'enquêtes par programme doit être entre ${ENQUETES_MINIMUM} et ${ENQUETES_MAXIMUM}.`);
     const remplies = rangees.filter((r) => r.ligne || r.commandees !== "");
     if (!remplies.length) erreurs.push("Ajoutez au moins une ligne.");
     const vues = new Set();
@@ -403,9 +406,9 @@ function ouvrirFenetreCourse(course) {
       if (vues.has(r.ligne.id)) erreurs.push(`La ligne ${r.ligne.libelle} est présente deux fois.`);
       vues.add(r.ligne.id);
       const c = Number(r.commandees);
-      if (!Number.isInteger(c) || c <= 0) erreurs.push(`Ligne ${r.ligne.libelle} : indiquez le nombre d'enquêtes commandées.`);
+      if (!Number.isInteger(c) || c <= 0) erreurs.push(`Ligne ${r.ligne.libelle} : indiquez le nombre d'enquêtes à faire.`);
       const deja = programmeesParLigne.get(r.ligne.id) || 0;
-      if (c < deja) erreurs.push(`Ligne ${r.ligne.libelle} : ${deja} enquêtes sont déjà programmées, la commande ne peut pas être plus petite.`);
+      if (c < deja) erreurs.push(`Ligne ${r.ligne.libelle} : ${deja} enquêtes sont déjà programmées, le nombre d'enquêtes à faire ne peut pas être plus petit.`);
     }
     for (const [id, deja] of programmeesParLigne) {
       if (deja && !vues.has(id)) erreurs.push(`La ligne ${libelle(id)} a des programmes : elle ne peut pas être retirée.`);

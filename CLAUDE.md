@@ -7,19 +7,20 @@ Elle aide à construire les programmes des enquêteurs qui mesurent le taux de f
 
 - **Enquête** : un questionnaire passé à un voyageur.
 - **Ligne** : une ligne de bus (aussi RER, métro, tramway en tant que correspondances).
-- **Course** : un ensemble de lignes demandées par le client, avec pour chaque ligne un nombre d'enquêtes commandées. Une course contient plusieurs lignes ; une ligne a plusieurs programmes.
-- **Programme** : une journée de travail d'un enquêteur, de 7 heures (entre 7 et 9 heures possibles), soit environ 120 enquêtes (110 à 130). Ces deux valeurs sont des réglages de la course.
+- **Course** : un ensemble de lignes demandées par le client, avec pour chaque ligne un nombre d'**enquêtes à faire**. Une course contient plusieurs lignes ; une ligne a plusieurs programmes. Dans l'interface, écrire « Enquêtes à faire », jamais « commandées » (consigne de Darryl) ; dans le code et les fichiers exportés, le champ reste `commandees`.
+- **Programme** : une journée de travail d'un enquêteur, de 7 heures par défaut (entre 5 et 9 heures possibles), soit 120 enquêtes par défaut (entre 50 et 150 possibles). Ces deux valeurs sont des réglages de la course.
 - **Segment** : la partie d'un programme faite sur une ligne.
 - **Pivot** : arrêt où l'on passe d'une ligne à une autre (correspondance à 150 mètres ou moins).
-- **Quota par heure** : nombre d'enquêtes à faire sur une tranche d'une heure (ex. 10 de 7h à 8h, 20 de 8h à 9h).
+- **Quota par heure** : nombre d'enquêtes à faire sur une tranche d'une heure. Répartition automatique (consigne de Darryl, heures de pointe) : 10 de 6 heures à 7 heures, 20 de 7 heures à 8 heures, 20 de 8 heures à 9 heures, 10 de 9 heures à 10 heures, puis 15 par heure (jusqu'à 16 heures selon Darryl ; les autres heures valent aussi 15 en attendant sa réponse). Une tranche plus courte reçoit le quota au prorata. Chaque quota reste modifiable à la main. `PROFIL_QUOTAS` dans `calculs.js`.
+- **Direction** : sens de circulation d'un segment. Connue pour la 394 (fiche horaire) ; pour les autres lignes, l'utilisateur la saisit (les directions déjà saisies pour la ligne sont proposées).
 
 ## Règles métier
 
 1. Le client commande un nombre fixe d'enquêtes par ligne. **Il ne faut jamais en programmer plus** que le reste de la ligne (un surplus est une perte pour l'agence).
-2. Nombre de programmes nécessaires pour une ligne = commandées ÷ enquêtes par programme (ex. 240 enquêtes sur la 394 = 2 programmes de 120).
+2. Nombre de programmes nécessaires pour une ligne = enquêtes à faire ÷ enquêtes par programme (ex. 240 enquêtes sur la 394 = 2 programmes de 120).
 3. Un petit reste (par exemple 45 enquêtes) ne remplit pas une journée : on le combine avec le reste d'une autre ligne en chaînant les deux lignes par un pivot, jusqu'à atteindre le total d'un programme.
 4. Le début et la fin d'un programme doivent être faciles d'accès : afficher la gare de RER, la station de métro ou l'arrêt de tramway le plus proche (distance en mètres), avertir s'il n'y en a pas.
-5. Un programme est enregistré dans une course. Le total des quotas par heure doit être égal au nombre d'enquêtes du programme.
+5. Un programme est enregistré dans une course. Le nombre d'enquêtes d'un segment est la somme de ses quotas par heure (il n'y a plus de champ « enquêtes sur ce segment » : Darryl l'a jugé inutile) ; le total du programme est donc toujours égal à la somme des quotas.
 6. Une course peut être téléchargée en **un seul fichier** : la course, toutes ses lignes, tous les programmes de chaque ligne (arrêts, horaires, quotas par heure). Fait selon le format proposé (classeur Excel : une feuille « Synthèse » + une feuille par ligne avec chaque programme, ses arrêts, son accès ou son pivot, ses horaires et ses quotas par heure) ; Darryl ne l'a pas encore validé.
 
 ## Règles d'interface
@@ -38,7 +39,7 @@ Fichier : https://www.figma.com/design/aNgH9fD4qPoADC7JGvGI6Q (clé `aNgH9fD4qPo
 |---|---|---|
 | 1 · Lignes et correspondances | `3:2` | choix de ligne, arrêts dans l'ordre avec correspondances (train/métro/tramway séparés des bus), détail d'un arrêt, bouton « Utiliser comme arrêt de pivot » |
 | 2 · Construire un programme | `14:82` | choix de la course, reste à programmer par ligne, parcours en segments reliés par des pivots, quotas par heure, total du programme |
-| 2b · Créer une course | `14:325` | fenêtre : nom, enquêtes par programme, durée, lignes avec enquêtes commandées, programmes nécessaires, restes à combiner |
+| 2b · Créer une course | `14:325` | fenêtre : nom, enquêtes par programme, durée, lignes avec enquêtes à faire, programmes nécessaires, restes à combiner |
 | 3 · Courses | `15:193` | liste des courses, lignes de la course, programmes par ligne, suggestion du programme suivant, « Télécharger la course complète » |
 
 Les composants (pastille de ligne, bouton, barre latérale) sont dans le cadre « Composants » (`1:16`).
@@ -87,7 +88,9 @@ Les chiffres de la maquette (noms de courses, commandes, horaires) sont des exem
   - `donnees.js` (chargement et recherche des lignes), `stockage.js` (courses, import, export, exemple de la maquette), `interface.js` (éléments, pastilles, fenêtres, notifications, liste de choix d'une ligne).
   - Un fichier par écran : `ecran-lignes.js`, `ecran-courses.js` (avec la fenêtre 2b), `ecran-programme.js` ; `excel.js` charge `vendor/exceljs.min.js` (ExcelJS 4.4.0, licence MIT) seulement au téléchargement.
   - Navigation par l'ancre de l'adresse : `/#ligne=C01319&arret=…&sens=…&rayon=…`, `/courses/#course=<id>` (`#creer=1` ouvre la fenêtre), `/programme/#course=<id>` (nouveau), `&programme=<id>` (modification), `&suggestion=C01319:75,C01215:45` (pré-rempli).
-- Règles appliquées par `verifierProgramme` : bloquent l'enregistrement le surplus sur une ligne (règle 1), un total de quotas différent des enquêtes du segment (règle 5), un segment incomplet ou qui commence avant la fin du précédent ; simples alertes : total différent des enquêtes par programme, durée différente de la durée prévue, pivot à plus de 150 mètres.
+- Règles appliquées par `verifierProgramme` : bloquent l'enregistrement le surplus sur une ligne (règle 1), un segment sans enquête, un segment incomplet (ligne, arrêts, heures) ou qui commence avant la fin du précédent ; simples alertes : direction non renseignée, total différent des enquêtes par programme, durée différente de la durée prévue, pivot à plus de 150 mètres.
+- Horaires : un programme commence par défaut à 06:00 ; heures et minutes se choisissent dans deux listes (00 à 23, 00 à 59). Un programme pré-rempli (suggestion, nouveau programme, segment ajouté) dure le temps que les quotas par défaut atteignent son nombre d'enquêtes (`finPourObjectif`) : 120 enquêtes depuis 06:00 finissent à 14:00, soit 8 heures, d'où une alerte si la course prévoit 7 heures.
+- Affichage : pensé pour 1280 à 1440 pixels de large et plus ; en dessous de 1400 pixels, la barre latérale et les colonnes se resserrent. Écran 1 : correspondances d'un arrêt sur toute la largeur (train, métro, tramway sur une ligne, bus en dessous, 12 bus au plus puis « et N autres bus »), une seule pastille par libellé ; le détail regroupe les correspondances par arrêt de l'autre ligne. Vérifier l'absence de débordement sur la Gare du Nord (ligne 91, `C01122`) et la Gare de Meaux (ligne 7702, `C01820`), les arrêts les plus chargés.
 - **Confidentialité** : GitHub Pages gratuit est public. Aucune donnée client (commandes, courses, programmes) ne doit être dans le dépôt, seulement les données ouvertes. Le `.gitignore` exclut `*.xlsx`, `*.xls`, `exports/` et `courses*.json` ; un test vérifie qu'aucun fichier Excel ou CSV n'est dans `static/`.
 - Tests : `node --test tests/js/*.test.mjs` (calculs : quotas, surplus, pivots, suggestion de la maquette) et `pytest` (pages affichées, lien actif, absence d'abréviations dans les gabarits, site figé sous un sous-dossier, données générées). Ils tournent avant chaque déploiement. Les textes écrits par le JavaScript ne sont pas couverts par `pytest` : les vérifier dans un navigateur (Playwright) après chaque changement d'interface.
 
@@ -107,11 +110,11 @@ node --test tests/js/*.test.mjs              # tests des calculs
 Course    { id, nom, enquetesParProgramme: 120, dureeProgrammeHeures: 7,
             lignes: [{ ligne, commandees }], programmes: Programme[] }
 Programme { id, numero, segments: Segment[] }
-Segment   { ligne, sens, arretDepart, arretFin, debut: "07:00", fin: "11:30", enquetes,
-            quotas: [{ debut, fin, enquetes }] }   // tranches coupées aux heures rondes
+Segment   { ligne, sens /* direction */, arretDepart, arretFin, debut: "06:00", fin: "11:00",
+            enquetes /* = somme des quotas, recalculée */, quotas: [{ debut, fin, enquetes }] }   // tranches coupées aux heures rondes
 ```
 
-Calculs : programmées(ligne) = somme des enquêtes des segments de cette ligne ; restantes = commandées − programmées (jamais négatif, bloquer l'enregistrement sinon) ; programmes nécessaires = ⌈total commandé ÷ enquêtes par programme⌉.
+Calculs : programmées(ligne) = somme des enquêtes des segments de cette ligne ; restantes = à faire − programmées (jamais négatif, bloquer l'enregistrement sinon) ; programmes nécessaires = ⌈total à faire ÷ enquêtes par programme⌉.
 Suggestion : paires de lignes de la course dont les restes sont inférieurs à un programme, qui ont un pivot à 150 mètres ou moins, et dont la somme se rapproche de 120. Sont aussi proposés : un programme plein sur une ligne qui a encore 120 enquêtes ou plus, un petit reste complété par une partie d'une grosse ligne, et en dernier recours un petit reste seul. Classement : écart à 120, puis paire, plein, complément, seul, puis distance du pivot. La ligne qui a le plus d'enquêtes passe en premier.
 
 Exemple de la maquette : course « Hauts-de-Seine sud » = 394 (240), 14 (75), 195 (45), soit 360 enquêtes et 3 programmes. Programme 1 : 394 seule (120). Programme 2 : 394 (45) puis 14 (75), pivot Stade du Panorama. Programme 3 suggéré : 394 (75) puis 195 (45), pivot Division Leclerc.

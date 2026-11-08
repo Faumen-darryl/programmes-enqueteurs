@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  accesFerre, decoupage, distanceEntreArrets, etatLignes, pivotsEntre, programmesNecessaires, quotasConserves,
-  quotasRepartis, repartir, resumeCourse, segmentsSuggeres, suggestions, texteDuree, tranchesHoraires, verifierProgramme,
+  accesFerre, decoupage, distanceEntreArrets, enquetesSegment, etatLignes, finPourObjectif, pivotsEntre,
+  programmesNecessaires, quotasConserves, quotasParDefaut, quotasPourObjectif, resumeCourse, segmentsSuggeres,
+  suggestions, texteDuree, tranchesHoraires, verifierProgramme,
 } from "../../static/js/calculs.js";
 import { rechercherLignes } from "../../static/js/donnees.js";
 
@@ -39,9 +40,10 @@ function course(programmes = []) {
   };
 }
 
-function segment(ligne, enquetes, debut = "07:00", fin = "14:00", depart = "A", arrivee = "B") {
-  const s = { ligne, sens: null, arretDepart: depart, arretFin: arrivee, debut, fin, enquetes };
-  s.quotas = quotasRepartis(s);
+/** Segment de `enquetes` enquêtes à partir de `debut`, avec les quotas par défaut ajustés. */
+function segment(ligne, enquetes, debut = "06:00", depart = "A", arrivee = "B") {
+  const s = { ligne, sens: "vers B", arretDepart: depart, arretFin: arrivee, debut, fin: finPourObjectif(debut, enquetes) };
+  s.quotas = quotasPourObjectif(s, enquetes);
   return s;
 }
 
@@ -51,18 +53,33 @@ test("tranches d'une heure coupées aux heures rondes", () => {
   assert.deepEqual(tranchesHoraires("10:00", "09:00"), []);
 });
 
-test("répartition des quotas au prorata, total exact", () => {
-  assert.deepEqual(repartir(45, tranchesHoraires("09:30", "11:15")), [13, 26, 6]);
-  const sept = repartir(120, tranchesHoraires("07:00", "14:00"));
-  assert.equal(sept.reduce((a, b) => a + b, 0), 120);
-  assert.deepEqual(sept, [18, 17, 17, 17, 17, 17, 17]);
+test("répartition automatique : heures de pointe du matin, puis 15 par heure", () => {
+  assert.deepEqual(quotasParDefaut({ debut: "06:00", fin: "16:00" }).map((q) => q.enquetes), [10, 20, 20, 10, 15, 15, 15, 15, 15, 15]);
+  assert.deepEqual(quotasParDefaut({ debut: "18:00", fin: "19:00" }).map((q) => q.enquetes), [15]);
+  // Une demi-heure vaut la moitié du quota de son heure
+  assert.deepEqual(quotasParDefaut({ debut: "07:30", fin: "09:00" }).map((q) => q.enquetes), [10, 20]);
 });
 
-test("les quotas conservés gardent les tranches inchangées", () => {
-  const s = segment("C01319", 30, "07:00", "09:00");
-  s.quotas[0].enquetes = 20;
+test("fin d'un segment calculée pour atteindre un nombre d'enquêtes", () => {
+  assert.equal(finPourObjectif("06:00", 120), "14:00");
+  assert.equal(finPourObjectif("06:00", 75), "11:00");
+  assert.equal(finPourObjectif("11:00", 45), "14:00");
+  assert.equal(finPourObjectif("06:00", 45), "08:45");
+  const s = { debut: "06:00", fin: "08:45" };
+  assert.deepEqual(quotasPourObjectif(s, 45).map((q) => q.enquetes), [10, 20, 15]);
+});
+
+test("enquêtes d'un segment = somme des quotas par heure", () => {
+  const s = segment("C01319", 75);
+  assert.equal(enquetesSegment(s), 75);
+  s.quotas[0].enquetes += 3;
+  assert.equal(enquetesSegment(s), 78);
+});
+
+test("les quotas conservés gardent les tranches inchangées, les nouvelles prennent le quota par défaut", () => {
+  const s = { debut: "07:00", fin: "09:00", quotas: [{ debut: "07:00", fin: "08:00", enquetes: 25 }, { debut: "08:00", fin: "09:00", enquetes: 5 }] };
   s.fin = "10:00";
-  assert.deepEqual(quotasConserves(s).map((q) => q.enquetes), [20, 15, 0]);
+  assert.deepEqual(quotasConserves(s).map((q) => q.enquetes), [25, 5, 10]);
 });
 
 test("durées écrites en toutes lettres", () => {
@@ -87,10 +104,10 @@ test("état des lignes et résumé de la course", () => {
   assert.deepEqual(resumeCourse(c), { commandees: 360, programmees: 120, restantes: 240, necessaires: 3, realises: 1 });
 });
 
-test("un programme correct ne bloque pas", () => {
-  const c = course();
-  const p = { id: "p1", numero: 1, segments: [segment("C01319", 120)] };
-  assert.deepEqual(verifierProgramme(c, p), { erreurs: [], alertes: [] });
+test("un programme correct ne bloque pas ; la durée différente n'est qu'une alerte", () => {
+  const p = { id: "p1", numero: 1, segments: [segment("C01319", 120)] }; // 06:00 à 14:00 avec les quotas par défaut
+  assert.deepEqual(verifierProgramme({ ...course(), dureeProgrammeHeures: 8 }, p), { erreurs: [], alertes: [] });
+  assert.deepEqual(verifierProgramme(course(), p), { erreurs: [], alertes: ["Le programme dure 8 heures au lieu de 7 heures."] });
 });
 
 test("le surplus bloque l'enregistrement (règle 1)", () => {
@@ -107,21 +124,22 @@ test("une modification ne compte pas deux fois le programme modifié", () => {
   assert.deepEqual(verifierProgramme(c, structuredClone(p1)).erreurs, []);
 });
 
-test("le total des quotas doit être égal aux enquêtes (règle 5)", () => {
-  const s = segment("C01319", 120);
-  s.quotas[0].enquetes += 5;
+test("des quotas tous à zéro bloquent l'enregistrement", () => {
+  const s = segment("C01319", 30);
+  s.quotas.forEach((q) => { q.enquetes = 0; });
   const { erreurs } = verifierProgramme(course(), { id: "p", numero: 1, segments: [s] });
-  assert.ok(erreurs.some((e) => e.includes("total des quotas par heure (125)")));
+  assert.ok(erreurs.some((e) => e.includes("aucune enquête dans les quotas par heure")));
 });
 
-test("segments qui se chevauchent, arrêts manquants, alertes de total et de durée", () => {
-  const a = segment("C01319", 45, "07:00", "10:00");
-  const b = segment("C00350", 50, "09:30", "13:00", "", "B");
+test("segments qui se chevauchent, arrêts manquants, direction absente, alertes de total et de durée", () => {
+  const a = segment("C01319", 45, "06:00");
+  const b = segment("C00350", 30, "08:30", "", "B");
+  b.sens = "";
   const { erreurs, alertes } = verifierProgramme(course(), { id: "p", numero: 1, segments: [a, b] });
   assert.ok(erreurs.some((e) => e.includes("commence avant la fin du segment précédent")));
   assert.ok(erreurs.some((e) => e.includes("choisir l'arrêt de départ.")));
-  assert.ok(alertes.some((e) => e.includes("95 enquêtes au lieu de 120")));
-  assert.ok(alertes.some((e) => e.includes("6 heures au lieu de 7 heures")));
+  assert.ok(alertes.some((e) => e.includes("direction non renseignée")));
+  assert.ok(alertes.some((e) => e.includes("75 enquêtes au lieu de 120")));
 });
 
 test("pivots entre deux lignes, du plus proche au plus loin", () => {
@@ -147,7 +165,7 @@ test("accès le plus proche : seulement les lignes ferrées", () => {
 test("suggestion de la maquette : 394 (75) puis 195 (45), pivot Division Leclerc", () => {
   const c = course([
     { id: "p1", numero: 1, segments: [segment("C01319", 120)] },
-    { id: "p2", numero: 2, segments: [segment("C01319", 45, "07:00", "09:45"), segment("C00350", 75, "09:45", "14:00")] },
+    { id: "p2", numero: 2, segments: [segment("C01319", 45, "06:00"), segment("C00350", 75, "08:45")] },
   ]);
   const [premiere] = suggestions(c, fichiers);
   assert.equal(premiere.type, "paire");
@@ -175,10 +193,12 @@ test("segments pré-remplis à partir d'une suggestion", () => {
   assert.equal(a.arretDepart, "Issy");
   assert.equal(a.arretFin, "Division Leclerc");
   assert.equal(b.arretDepart, "Division Leclerc");
-  assert.equal(a.debut, "07:00");
-  assert.equal(a.fin, b.debut);
+  assert.equal(a.debut, "06:00");
+  assert.equal(a.fin, "11:00");
+  assert.equal(b.debut, "11:00");
   assert.equal(b.fin, "14:00");
-  assert.equal(a.quotas.reduce((x, q) => x + q.enquetes, 0), 75);
+  assert.equal(enquetesSegment(a), 75);
+  assert.equal(enquetesSegment(b), 45);
 });
 
 test("recherche de ligne : numéro exact d'abord, puis commune", () => {

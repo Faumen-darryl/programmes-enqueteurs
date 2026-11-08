@@ -1,6 +1,6 @@
 // Écran 1 : lignes et correspondances.
 
-import { accesFerre, arretsDuSens, FAMILLES_FERREES, RAYON_PIVOT } from "./calculs.js";
+import { accesFerre, arretsDuSens, FAMILLES_FERREES, pluriel, RAYON_PIVOT } from "./calculs.js";
 import { chargerIndex, chargerLigne, cleNaturelle } from "./donnees.js";
 import {
   bouton, creerChoixLigne, descriptionLigne, el, etatAttente, etatVide, etiquette, etiquettesLigne, hash, icone,
@@ -10,7 +10,7 @@ import { lireCourses, lirePivotRetenu, retenirPivot } from "./stockage.js";
 
 const contenu = document.getElementById("contenu-ligne");
 const caseSpeciales = document.getElementById("inclure-speciales");
-const BUS_AFFICHES = 8;
+const BUS_AFFICHES = 12;
 
 let index = null;
 let choix = null;
@@ -123,18 +123,36 @@ function rendreAccueil(avertissement) {
 
 // ---------- Ligne ----------
 
+/** Correspondances d'un arrêt jusqu'à `rayon`, séparées en lignes ferrées et bus, une seule fois par libellé. */
 function correspondancesDe(arret, rayon) {
-  const lourdes = [];
-  const bus = [];
+  const lourdes = new Map();
+  const bus = new Map();
   for (const [id, nom, distance] of arret.correspondances) {
     if (distance > rayon) continue;
     const ligne = index.parId.get(id);
     if (!visible(ligne)) continue;
-    (FAMILLES_FERREES.has(ligne.famille) ? lourdes : bus).push({ ligne, nom, distance });
+    const groupe = FAMILLES_FERREES.has(ligne.famille) ? lourdes : bus;
+    if (!groupe.has(ligne.libelle)) groupe.set(ligne.libelle, { ligne, nom, distance }); // triées par distance : la plus proche
   }
   const tri = (a, b) => cleNaturelle(a.ligne.libelle, b.ligne.libelle);
-  return { lourdes: lourdes.sort(tri), bus: bus.sort(tri) };
+  return { lourdes: [...lourdes.values()].sort(tri), bus: [...bus.values()].sort(tri) };
 }
+
+/** Regroupe des correspondances par arrêt de l'autre ligne, du plus proche au plus loin. */
+function grouperParArret(correspondances) {
+  const groupes = new Map();
+  for (const c of correspondances) {
+    const g = groupes.get(c.nom) || { nom: c.nom, min: Infinity, max: -Infinity, elements: [] };
+    g.min = Math.min(g.min, c.distance);
+    g.max = Math.max(g.max, c.distance);
+    if (!FAMILLES_FERREES.has(c.ligne.famille) || !g.elements.some((x) => x.ligne.libelle === c.ligne.libelle)) g.elements.push(c);
+    groupes.set(c.nom, g);
+  }
+  for (const g of groupes.values()) g.elements.sort((a, b) => cleNaturelle(a.ligne.libelle, b.ligne.libelle));
+  return [...groupes.values()].sort((a, b) => a.min - b.min || a.nom.localeCompare(b.nom, "fr"));
+}
+
+const texteEcart = (g) => (g.min === g.max ? texteDistance(g.min) : `${g.min} à ${texteDistance(g.max)}`);
 
 function rendreLigne() {
   if (!fichier) return;
@@ -159,8 +177,8 @@ function rendreLigne() {
         fichier.ordre ? etiquette("Ordre de la fiche horaire", "succes") : etiquette("Ordre non disponible", "alerte"))),
     el("div", { class: "entete-ligne__reglages" },
       fichier.ordre ? el("div", { class: "reglage" },
-        el("span", { class: "etiquette-champ", text: "Sens" }),
-        el("div", { class: "onglets", role: "group", "aria-label": "Sens" },
+        el("span", { class: "etiquette-champ", text: "Direction" }),
+        el("div", { class: "onglets", role: "group", "aria-label": "Direction" },
           [{ nom: "", texte: "Tous les arrêts" }, ...fichier.ordre.sens.map((s) => ({ nom: s.nom, texte: s.nom }))].map((s) => el("button", {
             type: "button", class: "onglet", "aria-pressed": String(s.nom === etat.sens),
             onclick: () => { etat.sens = s.nom; rendreLigne(); },
@@ -192,16 +210,18 @@ function rendreLigne() {
 function rendreListe(ligne, arrets, arretChoisi) {
   const liste = document.getElementById("liste-arrets");
   const ordonne = Boolean(fichier.ordre);
+  const titre = (c) => `Ligne ${c.ligne.libelle} : ${c.nom}, ${texteDistance(c.distance)}`;
   vider(liste,
     !ordonne ? message("Ordre des arrêts non disponible pour cette ligne : les arrêts sont classés par ordre alphabétique. L'ordre réel viendra avec les horaires (GTFS).", "information") : null,
     el("div", { class: "liste-arrets__entete" },
       el("span", { text: "Arrêt" }),
-      el("span", { text: "Train, métro, tramway" }),
-      el("span", { text: `Bus à ${texteDistance(etat.rayon)} ou moins` })),
+      el("span", { class: "liste-arrets__legende" },
+        el("span", { text: `Correspondances à ${texteDistance(etat.rayon)} ou moins` }),
+        el("span", { class: "legende legende--ferree", text: "Train, métro, tramway" }),
+        el("span", { class: "legende legende--bus", text: "Bus" }))),
     el("ol", { class: `trace${ordonne ? " trace--ordonne" : ""}` },
       arrets.map((arret, i) => {
         const { lourdes, bus } = correspondancesDe(arret, etat.rayon);
-        const aucune = !lourdes.length && !bus.length;
         return el("li", {},
           el("button", {
             type: "button", class: "arret-ligne", "aria-pressed": String(arret === arretChoisi),
@@ -216,15 +236,13 @@ function rendreListe(ligne, arrets, arretChoisi) {
           el("span", { class: "arret-ligne__repere", "aria-hidden": "true" }, ordonne ? String(i + 1) : ""),
           el("span", { class: "arret-ligne__nom" },
             el("strong", { text: arret.nom }),
-            el("span", { text: [arret.communes.join(", "), arret.remarque].filter(Boolean).join(" · ") })),
-          aucune
-            ? el("span", { class: "arret-ligne__aucune texte-discret", text: "Aucune correspondance" })
-            : [
-              el("span", { class: "arret-ligne__pastilles" }, lourdes.map((c) => pastille(c.ligne, `${c.ligne.libelle} : ${c.nom}, ${texteDistance(c.distance)}`))),
-              el("span", { class: "arret-ligne__pastilles" },
-                bus.slice(0, BUS_AFFICHES).map((c) => pastille(c.ligne, `${c.ligne.libelle} : ${c.nom}, ${texteDistance(c.distance)}`)),
-                bus.length > BUS_AFFICHES ? el("span", { class: "plus", text: `et ${bus.length - BUS_AFFICHES} autres` }) : null),
-            ]));
+            el("span", { text: [arret.communes.join(", "), arret.remarque].filter(Boolean).join(". ") })),
+          el("span", { class: "arret-ligne__correspondances" },
+            !lourdes.length && !bus.length ? el("span", { class: "texte-discret", text: "Aucune correspondance" }) : null,
+            lourdes.length ? el("span", { class: "arret-ligne__groupe" }, lourdes.map((c) => pastille(c.ligne, titre(c)))) : null,
+            bus.length ? el("span", { class: "arret-ligne__groupe" },
+              bus.slice(0, BUS_AFFICHES).map((c) => pastille(c.ligne, titre(c))),
+              bus.length > BUS_AFFICHES ? el("span", { class: "plus", text: `et ${bus.length - BUS_AFFICHES} autres bus` }) : null) : null)));
       })));
 }
 
@@ -244,19 +262,28 @@ function rendreDetail(arret) {
   const pivot = lirePivotRetenu();
   const estRetenu = pivot && pivot.ligne === fichier.id && pivot.arret === arret.nom;
 
-  const groupe = (titre, elements) => el("div", { class: "groupe-correspondances" },
-    el("h4", { text: titre }),
-    elements.length
-      ? el("ul", {}, elements.map((c) => {
-        const hors = c.distance > etat.rayon;
-        const contenuLigne = [pastille(c.ligne), el("span", { class: "groupe-correspondances__nom", text: c.nom }),
-          el("span", { class: "groupe-correspondances__distance", text: texteDistance(c.distance) })];
-        return el("li", { class: hors ? "hors-rayon" : "" },
-          c.ligne.fichier
-            ? el("a", { href: hash({ ligne: c.ligne.id, arret: c.nom, rayon: etat.rayon === RAYON_PIVOT ? "" : etat.rayon, tout: etat.tout ? "1" : "" }), title: `Voir la ligne ${c.ligne.libelle} à l'arrêt ${c.nom}` }, contenuLigne)
-            : el("div", {}, contenuLigne));
-      }))
-      : el("p", { class: "texte-discret", text: "Aucune correspondance" }));
+  const lienLigne = (c) => {
+    const hors = c.distance > etat.rayon;
+    const contenuPastille = pastille(c.ligne, `Ligne ${c.ligne.libelle}${c.ligne.nom !== c.ligne.libelle ? ` (${c.ligne.nom})` : ""}, ${texteDistance(c.distance)}${c.ligne.fichier ? " : voir la ligne" : ""}`);
+    return c.ligne.fichier
+      ? el("a", {
+        class: `lien-pastille${hors ? " hors-rayon" : ""}`,
+        href: hash({ ligne: c.ligne.id, arret: c.nom, rayon: etat.rayon === RAYON_PIVOT ? "" : etat.rayon, tout: etat.tout ? "1" : "" }),
+      }, contenuPastille)
+      : el("span", { class: `lien-pastille${hors ? " hors-rayon" : ""}` }, contenuPastille);
+  };
+  const groupe = (titre, elements) => {
+    const nombreLignes = new Set(elements.map((c) => c.ligne.libelle)).size;
+    return el("div", { class: "groupe-correspondances" },
+      el("h4", {}, el("span", { text: titre }), elements.length ? el("span", { class: "groupe-correspondances__nombre", text: pluriel(nombreLignes, "ligne", "lignes") }) : null),
+      elements.length
+        ? el("ul", { class: "groupes-arrets" }, grouperParArret(elements).map((g) => el("li", { class: `groupe-arret${g.min > etat.rayon ? " hors-rayon" : ""}` },
+          el("div", { class: "groupe-arret__entete" },
+            el("span", { class: "groupe-arret__nom", text: g.nom }),
+            el("span", { class: "groupe-arret__distance", text: texteEcart(g) })),
+          el("div", { class: "groupe-arret__pastilles" }, g.elements.map(lienLigne)))))
+        : el("p", { class: "texte-discret", text: "Aucune correspondance" }));
+  };
 
   vider(detail,
     el("p", { class: "detail-arret__surtitre" }, icone("arret", 16), el("span", { text: `Arrêt de la ligne ${ligne.libelle}` })),
@@ -269,7 +296,9 @@ function rendreDetail(arret) {
         el("span", { class: "etiquette-champ", text: "Gare, station ou tramway le plus proche" }),
         el("div", { class: "acces__ligne" }, pastille(acces.ligne), el("span", { text: acces.nom }), el("strong", { text: texteDistance(acces.distance) })))
       : message("Aucune gare de RER, station de métro ou arrêt de tramway à moins de 300 mètres.", "alerte"),
-    el("p", { class: "detail-arret__note texte-secondaire", text: `Correspondances jusqu'à 300 mètres ; celles au-delà de ${texteDistance(etat.rayon)} sont grisées.` }),
+    el("p", { class: "detail-arret__note texte-secondaire", text: etat.rayon < 300
+      ? `Correspondances jusqu'à 300 mètres, regroupées par arrêt ; celles au-delà de ${texteDistance(etat.rayon)} sont grisées. Cliquez sur une ligne de bus pour l'ouvrir.`
+      : "Correspondances jusqu'à 300 mètres, regroupées par arrêt. Cliquez sur une ligne de bus pour l'ouvrir." }),
     groupe("Train, métro, tramway", lourdes),
     groupe("Bus", bus),
     el("div", { class: "detail-arret__actions" },

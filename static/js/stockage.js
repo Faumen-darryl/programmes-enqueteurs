@@ -70,8 +70,9 @@ function normaliserCourse(c) {
         arretFin: s.arretFin || "",
         debut: s.debut || "",
         fin: s.fin || "",
-        enquetes: Number(s.enquetes) || 0,
         quotas: (s.quotas || []).map((q) => ({ debut: q.debut, fin: q.fin, enquetes: Number(q.enquetes) || 0 })),
+        // Enquêtes du segment = somme des quotas par heure (le champ est gardé pour les fichiers exportés).
+        enquetes: (s.quotas || []).length ? s.quotas.reduce((a, q) => a + (Number(q.enquetes) || 0), 0) : Number(s.enquetes) || 0,
       })),
     })),
     creeeLe: c.creeeLe || null,

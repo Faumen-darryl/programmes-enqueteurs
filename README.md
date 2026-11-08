@@ -6,9 +6,9 @@ Le site est écrit avec Flask, puis transformé en fichiers statiques et publié
 
 ## Utiliser l'outil
 
-1. **Courses** : « Créer une course » (nom, enquêtes par programme, durée, lignes et enquêtes commandées). Pour essayer, « Charger l'exemple de la maquette » crée la course Hauts-de-Seine sud (394, 14, 195).
+1. **Courses** : « Créer une course » (nom, enquêtes par programme de 50 à 150, durée de 5 à 9 heures, lignes et enquêtes à faire). Pour essayer, « Charger l'exemple de la maquette » crée la course Hauts-de-Seine sud (394, 14, 195).
 2. La course affiche le reste à programmer par ligne et **le programme suivant suggéré** (restes combinés par un pivot). « Construire ce programme » ouvre le programme pré-rempli.
-3. **Construire un programme** : pour chaque segment, la ligne, le sens, les arrêts de départ et de fin, les horaires, le nombre d'enquêtes et les quotas par heure (répartis automatiquement, modifiables). Entre deux segments, choisir l'arrêt de pivot. L'enregistrement est bloqué s'il y a un surplus sur une ligne ou si les quotas ne tombent pas juste.
+3. **Construire un programme** : pour chaque segment, la ligne, la direction (à saisir quand elle n'est pas connue), les arrêts de départ et de fin, les heures de début et de fin (6 heures par défaut, à la minute près) et les quotas par heure : 10 de 6 heures à 7 heures, 20 de 7 heures à 9 heures, 10 de 9 heures à 10 heures, puis 15 par heure, tous modifiables. Le nombre d'enquêtes d'un segment est la somme de ses quotas. Entre deux segments, choisir l'arrêt de pivot. L'enregistrement est bloqué s'il y a un surplus sur une ligne.
 4. **Lignes et correspondances** : rechercher une ligne, voir ses arrêts et leurs correspondances, régler le rayon, retenir un arrêt de pivot.
 5. **Télécharger la course complète** : un fichier Excel avec une feuille de synthèse et une feuille par ligne.
 6. **Exporter / Importer** : pour passer les courses d'un poste à l'autre (fichier JSON). Les courses ne quittent jamais le navigateur autrement.

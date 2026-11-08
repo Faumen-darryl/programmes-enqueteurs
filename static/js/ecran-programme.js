@@ -1,9 +1,9 @@
 // Écran 2 : construire (ou modifier) un programme d'une course.
 
 import {
-  accesFerre, arretsDuSens, distanceEntreArrets, etatLignes, pivotsEntre, pluriel, prochainNumero, quotasConserves,
-  quotasRepartis, RAYON_PIVOT, segmentsSuggeres, sommeQuotas, texteDuree, totalProgramme, verifierProgramme,
-  versHeure, versMinutes,
+  accesFerre, arretsDuSens, distanceEntreArrets, enquetesSegment, etatLignes, finPourObjectif, HEURE_DEBUT_DEFAUT,
+  pivotsEntre, pluriel, prochainNumero, quotasConserves, quotasParDefaut, quotasPourObjectif, RAYON_PIVOT,
+  segmentsSuggeres, sommeQuotas, texteDuree, totalProgramme, verifierProgramme, versHeure, versMinutes,
 } from "./calculs.js";
 import { chargerIndex, chargerLignes } from "./donnees.js";
 import {
@@ -43,7 +43,7 @@ async function preparer() {
   if (!courses.length) {
     vider(racine, el("section", { class: "carte" }, etatVide(
       "Aucune course",
-      "Un programme est toujours construit dans une course. Créez d'abord une course avec ses lignes et les enquêtes commandées.",
+      "Un programme est toujours construit dans une course. Créez d'abord une course avec ses lignes et leurs enquêtes à faire.",
       lien("Créer une course", `${urls().courses}#creer=1`, { variante: "primaire", nomIcone: "ajouter" }))));
     return;
   }
@@ -135,7 +135,7 @@ function rendreRestes() {
     pastille(ligneDe(l.ligne)),
     el("span", { class: "reste-ligne__chiffres" },
       el("strong", { text: pluriel(Math.max(l.disponibles, 0), "restante", "restantes") }),
-      el("span", { text: l.ceProgramme ? `${l.ceProgramme} dans ce programme, ${l.restantes < 0 ? `${-l.restantes} en trop` : `reste ${l.restantes} après`}` : `sur ${l.commandees} commandées` }))))));
+      el("span", { text: l.ceProgramme ? `${l.ceProgramme} dans ce programme, ${l.restantes < 0 ? `${-l.restantes} en trop` : `reste ${l.restantes} après`}` : `sur ${l.commandees} à faire` }))))));
 }
 
 function rendreSegments() {
@@ -177,6 +177,28 @@ function ajusterSens(segment) {
   const noms = arretsDuSens(fichier, segment.sens).map((a) => a.nom);
   if (noms.indexOf(segment.arretDepart) >= noms.indexOf(segment.arretFin)) segment.arretDepart = "";
   return segment;
+}
+
+/** Directions déjà saisies pour une ligne, dans toutes les courses : proposées pendant la saisie. */
+function directionsConnues(ligne) {
+  const directions = new Set();
+  const segments = [...lireCourses().flatMap((c) => c.programmes.flatMap((p) => p.segments)), ...programme.segments];
+  for (const s of segments) if (s.ligne === ligne && String(s.sens || "").trim()) directions.add(s.sens.trim());
+  return [...directions].sort((a, b) => a.localeCompare(b, "fr"));
+}
+
+const DEUX_CHIFFRES = (n) => String(n).padStart(2, "0");
+
+/** Heure en deux listes : heures de 00 à 23, minutes de 00 à 59. */
+function champHeure(id, valeur, onchange) {
+  const [h, m] = (valeur || HEURE_DEBUT_DEFAUT).split(":");
+  const liste = (suffixe, nombre, actuel, etiquette) => el("select", {
+    class: "champ champ--heure", id: `${id}-${suffixe}`, "aria-label": etiquette,
+    onchange: () => onchange(`${heures.value}:${minutes.value}`),
+  }, Array.from({ length: nombre }, (_, k) => el("option", { value: DEUX_CHIFFRES(k), text: DEUX_CHIFFRES(k), selected: DEUX_CHIFFRES(k) === actuel })));
+  const heures = liste("heures", 24, h, "Heures");
+  const minutes = liste("minutes", 60, m, "Minutes");
+  return el("div", { class: "heure" }, heures, el("span", { class: "heure__separateur", text: ":" }), minutes);
 }
 
 function choixSelect(id, options, valeur, onchange, vide = "Choisir…") {
@@ -233,7 +255,14 @@ function carteSegment(s, i) {
       const noms = new Set(arretsDuSens(fichier, s.sens).map((a) => a.nom));
       if (!noms.has(s.arretDepart)) s.arretDepart = "";
       if (!noms.has(s.arretFin)) s.arretFin = "";
-    }), "Tous les arrêts")
+    }), "Choisir la direction")
+    : el("input", {
+      class: "champ", id: id("sens"), value: s.sens || "", list: id("directions"), autocomplete: "off",
+      placeholder: "Par exemple : vers Gare de Clamart",
+      oninput: (e) => { s.sens = e.target.value.trim() || null; marquerModifie(); rendreResume(); },
+    });
+  const directions = !fichier?.ordre && s.ligne
+    ? el("datalist", { id: id("directions") }, directionsConnues(s.ligne).map((d) => el("option", { value: d })))
     : null;
 
   const champDepart = choixSelect(id("depart"), optionsArrets(), s.arretDepart, (v) => changer(() => {
@@ -246,34 +275,20 @@ function carteSegment(s, i) {
   }), "Choisir l'arrêt de départ");
   const champFin = choixSelect(id("fin"), optionsArrets(indexDepart + 1), s.arretFin, (v) => changer(() => { s.arretFin = v; }), "Choisir l'arrêt de fin");
 
-  const champHeure = (nom, valeur, applique) => el("input", {
-    class: "champ", type: "time", step: "900", id: id(nom), value: valeur || "",
-    onchange: (e) => changer(() => {
-      applique(e.target.value);
-      s.quotas = quotasManuels.has(s) ? quotasConserves(s) : quotasRepartis(s);
-    }),
-  });
-  const champDebut = champHeure("debut", s.debut, (v) => { s.debut = v; });
-  const champFinHeure = champHeure("fin-heure", s.fin, (v) => {
+  const recalculer = (segment) => {
+    segment.quotas = quotasManuels.has(segment) ? quotasConserves(segment) : quotasParDefaut(segment);
+  };
+  const champDebut = champHeure(id("debut"), s.debut, (v) => changer(() => { s.debut = v; recalculer(s); }));
+  const champFinHeure = champHeure(id("fin-heure"), s.fin, (v) => changer(() => {
     const ancienne = s.fin;
     s.fin = v;
+    recalculer(s);
     const suivant = programme.segments[i + 1];
-    if (suivant && suivant.debut === ancienne && versMinutes(v) !== null && versMinutes(v) < versMinutes(suivant.fin)) {
+    if (suivant && suivant.debut === ancienne && versMinutes(v) < versMinutes(suivant.fin)) {
       suivant.debut = v;
-      suivant.quotas = quotasManuels.has(suivant) ? quotasConserves(suivant) : quotasRepartis(suivant);
+      recalculer(suivant);
     }
-  });
-  const champEnquetes = el("input", {
-    class: "champ champ--nombre", type: "number", min: "1", step: "1", id: id("enquetes"), value: String(s.enquetes || ""),
-    oninput: (e) => {
-      s.enquetes = Number(e.target.value) || 0;
-      if (!quotasManuels.has(s)) s.quotas = quotasRepartis(s);
-      marquerModifie();
-      rendreQuotas(s, zoneQuotas);
-      rendreRestes();
-      rendreResume();
-    },
-  });
+  }));
 
   const duree = versMinutes(s.fin) - versMinutes(s.debut);
   const champ = (texte, cible, element) => el("div", { class: "champ-groupe" }, el("label", { class: "etiquette-champ", for: cible, text: texte }), element);
@@ -291,26 +306,28 @@ function carteSegment(s, i) {
       }) : null),
     el("div", { class: "segment__grille" },
       champ("Ligne", id("ligne"), champLigne),
-      champSens ? champ("Sens", id("sens"), champSens) : el("div", { class: "champ-groupe" },
-        el("span", { class: "etiquette-champ", text: "Sens" }),
-        el("p", { class: "texte-secondaire segment__sans-sens", text: "Non disponible pour cette ligne : l'ordre des arrêts n'est pas connu." })),
+      fichier?.ordre || !s.ligne
+        ? champ("Direction", id("sens"), champSens)
+        : el("div", { class: "champ-groupe" },
+          el("label", { class: "etiquette-champ", for: id("sens"), text: "Direction (à saisir)" }),
+          champSens, directions),
       champ("Arrêt de départ", id("depart"), champDepart),
       champ("Arrêt de fin", id("fin"), champFin)),
     (estPremier && s.arretDepart) || (estDernier && s.arretFin) ? el("div", { class: "segment__acces" },
       estPremier ? blocAcces(fichier, s.arretDepart, "Début") : null,
       estDernier ? blocAcces(fichier, s.arretFin, "Fin") : null) : null,
     el("div", { class: "segment__grille segment__grille--horaires" },
-      champ("Début", id("debut"), champDebut),
-      champ("Fin", id("fin-heure"), champFinHeure),
-      champ("Enquêtes sur ce segment", id("enquetes"), champEnquetes),
+      champ("Début", id("debut-heures"), champDebut),
+      champ("Fin", id("fin-heure-heures"), champFinHeure),
       el("div", { class: "champ-groupe" }, el("span", { class: "etiquette-champ", text: "Durée" }),
-        el("p", { class: "segment__duree", text: duree > 0 ? texteDuree(duree) : "Horaires à compléter" }))),
+        el("p", { class: "segment__duree", text: duree > 0 ? texteDuree(duree) : "L'heure de fin doit être après l'heure de début" }))),
     zoneQuotas);
 }
 
+const TEXTE_PROFIL = "Répartition automatique : 10 enquêtes de 6 heures à 7 heures, 20 de 7 heures à 9 heures, 10 de 9 heures à 10 heures, puis 15 par heure. Chaque quota reste modifiable.";
+
 function rendreQuotas(s, zone) {
-  const somme = sommeQuotas(s);
-  const juste = somme === Number(s.enquetes);
+  const total = el("p", { class: "quotas__total", text: texteTotalQuotas(s) });
   vider(zone,
     el("div", { class: "quotas__entete" },
       el("h4", { text: "Quotas par heure" }),
@@ -318,37 +335,35 @@ function rendreQuotas(s, zone) {
         variante: "discret", petit: true, nomIcone: "horloge",
         onclick: () => {
           quotasManuels.delete(s);
-          s.quotas = quotasRepartis(s);
+          s.quotas = quotasParDefaut(s);
           marquerModifie();
           rendreQuotas(s, zone);
+          rendreRestes();
           rendreResume();
         },
       })),
+    el("p", { class: "quotas__profil", text: TEXTE_PROFIL }),
     s.quotas.length
-      ? el("div", { class: "quotas__grille" }, s.quotas.map((q, k) => el("label", { class: "quota" },
+      ? el("div", { class: "quotas__grille" }, s.quotas.map((q) => el("label", { class: "quota" },
         el("span", { text: `${q.debut} à ${q.fin}` }),
         el("input", {
           class: "champ champ--nombre champ--petit", type: "number", min: "0", step: "1", value: String(q.enquetes),
           "aria-label": `Enquêtes de ${q.debut} à ${q.fin}`,
           oninput: (e) => {
-            q.enquetes = Math.max(0, Number(e.target.value) || 0);
+            q.enquetes = Math.max(0, Math.round(Number(e.target.value) || 0));
             quotasManuels.add(s);
             marquerModifie();
-            const total = zone.querySelector(".quotas__total");
-            const ok = sommeQuotas(s) === Number(s.enquetes);
-            total.className = `quotas__total ${ok ? "quotas__total--juste" : "quotas__total--faux"}`;
             total.textContent = texteTotalQuotas(s);
+            rendreRestes();
             rendreResume();
           },
         }))))
-      : el("p", { class: "texte-secondaire", text: "Indiquez l'heure de début et l'heure de fin pour obtenir les tranches d'une heure." }),
-    el("p", { class: `quotas__total ${juste ? "quotas__total--juste" : "quotas__total--faux"}`, text: texteTotalQuotas(s) }));
+      : el("p", { class: "texte-secondaire", text: "Choisissez une heure de fin après l'heure de début pour obtenir les tranches d'une heure." }),
+    total);
 }
 
 function texteTotalQuotas(s) {
-  const somme = sommeQuotas(s);
-  if (somme === Number(s.enquetes)) return `Total des quotas : ${somme}, égal aux enquêtes du segment.`;
-  return `Total des quotas : ${somme} au lieu de ${s.enquetes || 0}. Corrigez les quotas ou utilisez « Répartir automatiquement ».`;
+  return `Total du segment : ${texteEnquetes(sommeQuotas(s))}, somme des quotas par heure.`;
 }
 
 function cartePivot(i) {
@@ -405,18 +420,16 @@ function ajouterSegment() {
   const etat = etatLignes(course, programme);
   const candidate = etat.find((l) => l.restantes > 0 && l.ligne !== dernier?.ligne) || etat.find((l) => l.ligne !== dernier?.ligne) || etat[0];
   const fichier = fichiers.get(candidate.ligne);
-  const debut = dernier?.fin || "07:00";
-  const finJournee = versMinutes(programme.segments[0]?.debut || "07:00") + Math.round(course.dureeProgrammeHeures * 60);
-  const fin = versHeure(Math.max(versMinutes(debut) + 60, finJournee));
+  const debut = dernier?.fin || HEURE_DEBUT_DEFAUT;
   const manque = course.enquetesParProgramme - totalProgramme(programme);
+  const objectif = Math.min(Math.max(candidate.restantes, 0), manque > 0 ? manque : course.enquetesParProgramme);
   const segment = {
     ligne: candidate.ligne,
     sens: fichier?.ordre ? fichier.ordre.sens[0].nom : null,
     arretDepart: "",
     arretFin: "",
     debut,
-    fin,
-    enquetes: Math.max(1, Math.min(Math.max(candidate.restantes, 0), manque > 0 ? manque : candidate.restantes)) || 1,
+    fin: objectif > 0 ? finPourObjectif(debut, objectif) : versHeure(Math.min(versMinutes(debut) + 60, 23 * 60 + 59)),
   };
   if (dernier && fichiers.get(dernier.ligne) && fichier) {
     const pivot = pivotsEntre(fichiers.get(dernier.ligne), fichier)[0];
@@ -427,7 +440,7 @@ function ajouterSegment() {
       ajusterSens(segment);
     }
   }
-  segment.quotas = quotasRepartis(segment);
+  segment.quotas = objectif > 0 ? quotasPourObjectif(segment, objectif) : quotasParDefaut(segment);
   programme.segments.push(segment);
   marquerModifie();
   rendre();
@@ -456,7 +469,7 @@ function rendreResume() {
     el("dl", { class: "resume-liste" },
       el("div", {}, el("dt", { text: "Durée" }), el("dd", { text: duree > 0 ? `${texteDuree(duree)} sur ${texteDuree(prevue)}` : "À compléter" })),
       el("div", {}, el("dt", { text: "Horaires" }), el("dd", { text: premier?.debut && dernier?.fin ? `${premier.debut} à ${dernier.fin}` : "À compléter" })),
-      el("div", {}, el("dt", { text: "Segments" }), el("dd", { text: programme.segments.map((s) => `${libelle(s.ligne)} (${s.enquetes || 0})`).join(" puis ") || "Aucun" })),
+      el("div", {}, el("dt", { text: "Segments" }), el("dd", { text: programme.segments.map((s) => `${libelle(s.ligne)} (${enquetesSegment(s)})`).join(" puis ") || "Aucun" })),
       el("div", {}, el("dt", { text: "Début" }), el("dd", { text: premier?.arretDepart || "À choisir" })),
       el("div", {}, el("dt", { text: "Fin" }), el("dd", { text: dernier?.arretFin || "À choisir" }))),
     erreurs.length
@@ -480,7 +493,7 @@ function enregistrer() {
     numero: programme.numero,
     segments: programme.segments.map((s) => ({
       ligne: s.ligne, sens: s.sens || null, arretDepart: s.arretDepart, arretFin: s.arretFin, debut: s.debut, fin: s.fin,
-      enquetes: Number(s.enquetes), quotas: s.quotas.map((q) => ({ debut: q.debut, fin: q.fin, enquetes: Number(q.enquetes) })),
+      enquetes: sommeQuotas(s), quotas: s.quotas.map((q) => ({ debut: q.debut, fin: q.fin, enquetes: Number(q.enquetes) })),
     })),
   };
   const aJour = lireCourses().find((c) => c.id === course.id) || course;

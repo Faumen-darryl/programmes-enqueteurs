@@ -1,7 +1,7 @@
 // Téléchargement de la course complète en un seul classeur Excel, créé dans le navigateur.
 // Feuille « Synthèse » puis une feuille par ligne avec ses programmes (arrêts, horaires, quotas par heure).
 
-import { accesFerre, etatLignes, pluriel, resumeCourse, texteDuree, totalProgramme, versMinutes } from "./calculs.js";
+import { accesFerre, enquetesSegment, etatLignes, pluriel, resumeCourse, texteDuree, totalProgramme, versMinutes } from "./calculs.js";
 import { chargerLignes } from "./donnees.js";
 import { notifier, telecharger } from "./interface.js";
 
@@ -104,7 +104,7 @@ export async function telechargerCourseExcel(course, index) {
   const infos = [
     ["Enquêtes par programme", course.enquetesParProgramme],
     ["Durée d'un programme", texteDuree(Math.round(course.dureeProgrammeHeures * 60))],
-    ["Enquêtes commandées", resume.commandees],
+    ["Enquêtes à faire", resume.commandees],
     ["Enquêtes programmées", resume.programmees],
     ["Enquêtes restantes", resume.restantes],
     ["Programmes", `${resume.realises} sur ${resume.necessaires} nécessaires`],
@@ -123,7 +123,7 @@ export async function telechargerCourseExcel(course, index) {
   synthese.getCell(`A${r}`).value = "Lignes de la course";
   synthese.getCell(`A${r}`).font = { ...TITRE, size: 12 };
   r += 1;
-  ecrireEntete(synthese, r, ["Ligne", "Nom", "Exploitant", "Commandées", "Programmées", "Restantes", "Programmes"]);
+  ecrireEntete(synthese, r, ["Ligne", "Nom", "Exploitant", "Enquêtes à faire", "Programmées", "Restantes", "Programmes"]);
   const debutLignes = r + 1;
   etat.forEach((l, i) => {
     const ligne = parId.get(l.ligne);
@@ -148,7 +148,7 @@ export async function telechargerCourseExcel(course, index) {
     const premier = p.segments[0];
     const dernier = p.segments[p.segments.length - 1];
     const parcours = p.segments.map((s, k) => {
-      const morceau = `${libelle(s.ligne)} : ${s.arretDepart} → ${s.arretFin} (${s.enquetes})`;
+      const morceau = `${libelle(s.ligne)} : ${s.arretDepart} → ${s.arretFin} (${enquetesSegment(s)})`;
       return k === 0 ? morceau : `pivot ${p.segments[k - 1].arretFin}${p.segments[k - 1].arretFin !== s.arretDepart ? ` / ${s.arretDepart}` : ""}, puis ${morceau}`;
     }).join(", ");
     r += 1;
@@ -176,7 +176,7 @@ export async function telechargerCourseExcel(course, index) {
     feuille.columns = [{ width: 22 }, { width: 40 }, { width: 52 }];
     feuille.getCell("A1").value = `Ligne ${libelle(l.ligne)}${ligne?.nom && ligne.nom !== ligne.libelle ? ` (${ligne.nom})` : ""}`;
     feuille.getCell("A1").font = TITRE;
-    feuille.getCell("A2").value = `${ligne?.operateur ?? ""}. Commandées : ${l.commandees}, programmées : ${l.programmees}, restantes : ${l.restantes}.`;
+    feuille.getCell("A2").value = `${ligne?.operateur ?? ""}. Enquêtes à faire : ${l.commandees}, programmées : ${l.programmees}, restantes : ${l.restantes}.`;
     feuille.getCell("A2").font = POLICE;
     let ligneCourante = 4;
 
@@ -201,13 +201,13 @@ export async function telechargerCourseExcel(course, index) {
       titre.alignment = { vertical: "middle" };
       ligneCourante += 1;
       const details = [
-        ["Sens", s.sens || "Non disponible (ordre des arrêts inconnu)", ""],
+        ["Direction", s.sens || "Non renseignée", ""],
         ["Arrêt de départ", s.arretDepart,
           k === 0 ? `Accès : ${texteAcces(fichiers, parId, s.ligne, s.arretDepart)}` : `Arrivée de la ligne ${libelle(precedent.ligne)} (${precedent.arretFin})`],
         ["Arrêt de fin", s.arretFin,
           suivant ? `Pivot vers la ligne ${libelle(suivant.ligne)} (${suivant.arretDepart})` : `Accès : ${texteAcces(fichiers, parId, s.ligne, s.arretFin)}`],
         ["Horaires", `${s.debut} à ${s.fin}`, texteDuree(versMinutes(s.fin) - versMinutes(s.debut))],
-        ["Enquêtes", s.enquetes, ""],
+        ["Enquêtes", enquetesSegment(s), ""],
       ];
       details.forEach((d, i) => {
         const rangee = ecrireRangee(feuille, ligneCourante, d, { zebre: i % 2 === 1 });
@@ -222,7 +222,7 @@ export async function telechargerCourseExcel(course, index) {
         ecrireRangee(feuille, ligneCourante, ["", `${q.debut} à ${q.fin}`, q.enquetes], { zebre: i % 2 === 1 });
         ligneCourante += 1;
       });
-      ecrireRangee(feuille, ligneCourante, ["Total", "", { formula: `SUM(C${debutQuotas}:C${ligneCourante - 1})`, result: s.enquetes }], { gras: true });
+      ecrireRangee(feuille, ligneCourante, ["Total", "", { formula: `SUM(C${debutQuotas}:C${ligneCourante - 1})`, result: enquetesSegment(s) }], { gras: true });
       ligneCourante += 2;
     }
     feuille.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };

@@ -45,33 +45,60 @@ export function tranchesHoraires(debut, fin) {
   return tranches;
 }
 
-/** Répartit `total` enquêtes entre les tranches, au prorata de leur durée (plus forts restes). */
-export function repartir(total, tranches) {
-  const durees = tranches.map((t) => versMinutes(t.fin) - versMinutes(t.debut));
-  const somme = durees.reduce((a, b) => a + b, 0);
-  if (!somme || total <= 0) return tranches.map(() => 0);
-  const exacts = durees.map((d) => (total * d) / somme);
-  const parts = exacts.map(Math.floor);
-  let reste = total - parts.reduce((a, b) => a + b, 0);
-  const ordre = exacts.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
-  for (const [, i] of ordre) {
-    if (reste <= 0) break;
-    parts[i] += 1;
-    reste -= 1;
-  }
-  return parts;
+// ---------- Quotas par heure ----------
+
+/**
+ * Quotas par défaut, heure par heure (consigne de Darryl, 8 novembre 2026) : heures de pointe du matin.
+ * 6 h - 7 h : 10 ; 7 h - 9 h : 20 ; 9 h - 10 h : 10 ; puis 15 par heure. Les heures absentes valent 15.
+ */
+export const PROFIL_QUOTAS = { 6: 10, 7: 20, 8: 20, 9: 10, 10: 15, 11: 15, 12: 15, 13: 15, 14: 15, 15: 15 };
+export const QUOTA_HORS_PROFIL = 15;
+export const HEURE_DEBUT_DEFAUT = "06:00";
+
+export function quotaParDefaut(heure) {
+  return PROFIL_QUOTAS[heure] ?? QUOTA_HORS_PROFIL;
 }
 
-export function quotasRepartis(segment) {
-  const tranches = tranchesHoraires(segment.debut, segment.fin);
-  const valeurs = repartir(segment.enquetes || 0, tranches);
-  return tranches.map((t, i) => ({ ...t, enquetes: valeurs[i] }));
+/** Quota par défaut d'une tranche : la valeur de son heure, au prorata si la tranche dure moins d'une heure. */
+export function quotaTranche(tranche) {
+  const d = versMinutes(tranche.debut);
+  const f = versMinutes(tranche.fin);
+  return Math.round((quotaParDefaut(Math.floor(d / 60) % 24) * (f - d)) / 60);
 }
 
-/** Nouvelles tranches après un changement d'horaires, en gardant les quotas des tranches inchangées. */
+/** Répartition automatique : chaque tranche reçoit le quota par défaut de son heure. */
+export function quotasParDefaut(segment) {
+  return tranchesHoraires(segment.debut, segment.fin).map((t) => ({ ...t, enquetes: quotaTranche(t) }));
+}
+
+/** Nouvelles tranches après un changement d'horaires : les tranches inchangées gardent leur quota, les autres prennent le quota par défaut. */
 export function quotasConserves(segment) {
   const anciens = new Map((segment.quotas || []).map((q) => [`${q.debut}-${q.fin}`, q.enquetes]));
-  return tranchesHoraires(segment.debut, segment.fin).map((t) => ({ ...t, enquetes: anciens.get(`${t.debut}-${t.fin}`) ?? 0 }));
+  return tranchesHoraires(segment.debut, segment.fin).map((t) => ({ ...t, enquetes: anciens.get(`${t.debut}-${t.fin}`) ?? quotaTranche(t) }));
+}
+
+/** Heure de fin à laquelle les quotas par défaut, cumulés depuis `debut`, atteignent `objectif` enquêtes. */
+export function finPourObjectif(debut, objectif, dureeMaximum = 9 * 60) {
+  const d = versMinutes(debut);
+  const limite = Math.min(d + dureeMaximum, 23 * 60 + 59);
+  let cumul = 0; // en enquêtes × 60, pour rester en nombres entiers
+  for (let t = d; t < limite; t += 1) {
+    cumul += quotaParDefaut(Math.floor(t / 60) % 24);
+    if (cumul >= objectif * 60) return versHeure(t + 1);
+  }
+  return versHeure(limite);
+}
+
+/** Quotas par défaut d'un segment, ajustés sur la dernière tranche pour faire exactement `objectif` enquêtes. */
+export function quotasPourObjectif(segment, objectif) {
+  const quotas = quotasParDefaut(segment);
+  let ecart = objectif - quotas.reduce((a, q) => a + q.enquetes, 0);
+  for (let i = quotas.length - 1; i >= 0 && ecart !== 0; i -= 1) {
+    const nouveau = Math.max(0, quotas[i].enquetes + ecart);
+    ecart -= nouveau - quotas[i].enquetes;
+    quotas[i].enquetes = nouveau;
+  }
+  return quotas;
 }
 
 export function sommeQuotas(segment) {
@@ -80,12 +107,17 @@ export function sommeQuotas(segment) {
 
 // ---------- Courses et programmes ----------
 
+/** Enquêtes d'un segment : la somme de ses quotas par heure. */
+export function enquetesSegment(segment) {
+  return segment.quotas?.length ? sommeQuotas(segment) : Number(segment.enquetes) || 0;
+}
+
 export function totalProgramme(programme) {
-  return programme.segments.reduce((a, s) => a + (Number(s.enquetes) || 0), 0);
+  return programme.segments.reduce((a, s) => a + enquetesSegment(s), 0);
 }
 
 export function enquetesSurLigne(programme, ligne) {
-  return programme.segments.filter((s) => s.ligne === ligne).reduce((a, s) => a + (Number(s.enquetes) || 0), 0);
+  return programme.segments.filter((s) => s.ligne === ligne).reduce((a, s) => a + enquetesSegment(s), 0);
 }
 
 /**
@@ -165,11 +197,10 @@ export function verifierProgramme(course, programme, libelle = (id) => id) {
     const f = versMinutes(s.fin);
     if (d === null || f === null) erreurs.push(`${nom} : indiquer l'heure de début et l'heure de fin.`);
     else if (f <= d) erreurs.push(`${nom} : l'heure de fin doit être après l'heure de début.`);
-    if (!Number.isInteger(Number(s.enquetes)) || Number(s.enquetes) <= 0) {
-      erreurs.push(`${nom} : indiquer un nombre d'enquêtes supérieur à zéro.`);
-    } else if (sommeQuotas(s) !== Number(s.enquetes)) {
-      erreurs.push(`${nom} : le total des quotas par heure (${sommeQuotas(s)}) doit être égal aux ${s.enquetes} enquêtes du segment.`);
+    if (d !== null && f !== null && f > d && enquetesSegment(s) <= 0) {
+      erreurs.push(`${nom} : aucune enquête dans les quotas par heure.`);
     }
+    if (s.ligne && !String(s.sens || "").trim()) alertes.push(`${nom} : direction non renseignée.`);
     const precedent = programme.segments[i - 1];
     if (precedent && versMinutes(precedent.fin) !== null && d !== null && d < versMinutes(precedent.fin)) {
       erreurs.push(`${nom} : il commence avant la fin du segment précédent.`);
@@ -311,31 +342,29 @@ export function suggestions(course, fichiers, nombre = 3) {
   return candidats.slice(0, nombre);
 }
 
-/** Segments pré-remplis d'un programme à partir d'une suggestion. */
-export function segmentsSuggeres(suggestion, fichiers, course, debut = "07:00") {
-  const dureeTotale = Math.round(course.dureeProgrammeHeures * 60);
-  const total = suggestion.total || 1;
-  let heure = versMinutes(debut);
-  const fin = heure + dureeTotale;
+/**
+ * Segments pré-remplis d'un programme à partir d'une suggestion. Le programme commence à 6 heures ;
+ * chaque segment dure le temps que les quotas par défaut atteignent son nombre d'enquêtes.
+ */
+export function segmentsSuggeres(suggestion, fichiers, course, debut = HEURE_DEBUT_DEFAUT) {
+  let heure = debut;
   return suggestion.segments.map((s, i) => {
     const fichier = fichiers.get(s.ligne);
     const sens = fichier?.ordre ? fichier.ordre.sens[0].nom : null;
     const arrets = fichier ? arretsDuSens(fichier, sens) : [];
-    const dernierSegment = i === suggestion.segments.length - 1;
-    const duree = Math.round(((dureeTotale * s.enquetes) / total) / 15) * 15;
     const segment = {
       ligne: s.ligne,
       sens,
       arretDepart: fichier?.ordre ? arrets[0]?.nom ?? "" : "",
       arretFin: fichier?.ordre ? arrets[arrets.length - 1]?.nom ?? "" : "",
-      debut: versHeure(heure),
-      fin: versHeure(dernierSegment ? fin : heure + duree),
-      enquetes: s.enquetes,
+      debut: heure,
+      fin: finPourObjectif(heure, s.enquetes),
     };
     if (suggestion.pivot && i === 0) segment.arretFin = suggestion.pivot.arretA;
     if (suggestion.pivot && i === 1) segment.arretDepart = suggestion.pivot.arretB;
-    heure += duree;
-    segment.quotas = quotasRepartis(segment);
+    segment.quotas = quotasPourObjectif(segment, s.enquetes);
+    segment.enquetes = s.enquetes;
+    heure = segment.fin;
     return segment;
   });
 }
