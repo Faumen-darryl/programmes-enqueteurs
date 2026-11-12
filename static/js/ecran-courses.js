@@ -6,7 +6,7 @@ import {
 } from "./calculs.js";
 import { chargerIndex, chargerLignes } from "./donnees.js";
 import {
-  bouton, choisirFichier, confirmerAction, creerChoixLigne, descriptionLigne, el, etatAttente, etatVide, etiquette,
+  afficherSources, bouton, choisirFichier, confirmerAction, creerChoixLigne, descriptionLigne, el, etatAttente, etatVide, etiquette,
   hash, icone, lien, lireHash, message, notifier, ouvrirFenetre, pastille, telecharger, texteDistance, texteEnquetes,
   titreLigne, urls, vider,
 } from "./interface.js";
@@ -26,6 +26,7 @@ async function demarrer() {
   vider(racine, etatAttente());
   try {
     index = await chargerIndex();
+    afficherSources(index);
   } catch (erreur) {
     vider(racine, message(`Impossible de charger la liste des lignes : ${erreur.message}`, "alerte"));
     return;

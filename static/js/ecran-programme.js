@@ -1,13 +1,13 @@
 // Écran 2 : construire (ou modifier) un programme d'une course.
 
 import {
-  accesFerre, arretsDuSens, distanceEntreArrets, enquetesSegment, etatLignes, finPourObjectif, HEURE_DEBUT_DEFAUT,
+  accesFerre, ajusterSens as ajusterSensSegment, arretsDuSens, distanceEntreArrets, enquetesSegment, etatLignes, finPourObjectif, HEURE_DEBUT_DEFAUT,
   pivotsEntre, pluriel, prochainNumero, quotasConserves, quotasParDefaut, quotasPourObjectif, RAYON_PIVOT,
   segmentsSuggeres, sommeQuotas, texteDuree, totalProgramme, verifierProgramme, versHeure, versMinutes,
 } from "./calculs.js";
 import { chargerIndex, chargerLignes } from "./donnees.js";
 import {
-  bouton, el, etatAttente, etatVide, etiquette, hash, icone, lien, lireHash, message, notifier, notifierApresChargement,
+  afficherSources, bouton, el, etatAttente, etatVide, etiquette, hash, icone, lien, lireHash, message, notifier, notifierApresChargement,
   pastille, remplacerHash, texteDistance, texteEnquetes, urls, vider,
 } from "./interface.js";
 import { enregistrerCourse, lireCourses, lirePivotRetenu, nouvelIdentifiant } from "./stockage.js";
@@ -28,12 +28,18 @@ async function demarrer() {
   vider(racine, etatAttente());
   try {
     index = await chargerIndex();
+    afficherSources(index);
   } catch (erreur) {
     vider(racine, message(`Impossible de charger la liste des lignes : ${erreur.message}`, "alerte"));
     return;
   }
   window.addEventListener("beforeunload", (e) => {
     if (modifie) e.preventDefault();
+  });
+  // Bouton Retour ou lien vers un autre programme : l'ancre change sans recharger la page
+  window.addEventListener("hashchange", () => {
+    if (modifie && !window.confirm("Le programme en cours n'est pas enregistré. Le quitter quand même ?")) return;
+    preparer();
   });
   await preparer();
 }
@@ -78,7 +84,7 @@ function segmentsInitiaux(texteSuggestion) {
     }).filter((s) => course.lignes.some((l) => l.ligne === s.ligne) && s.enquetes > 0);
     if (segments.length) {
       const pivot = segments.length === 2 ? pivotsEntre(fichiers.get(segments[0].ligne), fichiers.get(segments[1].ligne))[0] : null;
-      return segmentsSuggeres({ segments, total: segments.reduce((a, s) => a + s.enquetes, 0), pivot }, fichiers, course).map(ajusterSens);
+      return segmentsSuggeres({ segments, total: segments.reduce((a, s) => a + s.enquetes, 0), pivot }, fichiers, course);
     }
   }
   const etat = etatLignes(course);
@@ -103,8 +109,8 @@ function rendre() {
         e.target.value = course.id;
         return;
       }
-      location.hash = hash({ course: e.target.value });
-      preparer();
+      modifie = false;
+      location.hash = hash({ course: e.target.value }); // l'écouteur « hashchange » prépare le nouveau programme
     },
   }, courses.map((c) => el("option", { value: c.id, selected: c.id === course.id, text: c.nom })));
 
@@ -155,28 +161,9 @@ function rendreSegments() {
   vider(zone, elements, bouton("Ajouter un segment sur une autre ligne", { variante: "secondaire", nomIcone: "ajouter", onclick: ajouterSegment }));
 }
 
-/** Choisit un sens où l'arrêt de départ précède l'arrêt de fin ; vide un arrêt introuvable dans tous les sens. */
+/** Direction cohérente avec les arrêts de départ et de fin (voir ajusterSens dans calculs.js). */
 function ajusterSens(segment) {
-  const fichier = fichiers.get(segment.ligne);
-  if (!fichier?.ordre) return segment;
-  const valide = (sens) => {
-    const noms = sens.arrets.map((i) => fichier.arrets[i].nom);
-    const d = segment.arretDepart ? noms.indexOf(segment.arretDepart) : -1;
-    const f = segment.arretFin ? noms.indexOf(segment.arretFin) : Infinity;
-    return (!segment.arretDepart || d !== -1) && (!segment.arretFin || f !== -1) && d < f;
-  };
-  const actuel = fichier.ordre.sens.find((x) => x.nom === segment.sens);
-  if (actuel && valide(actuel)) return segment;
-  const autre = fichier.ordre.sens.find(valide);
-  if (autre) {
-    segment.sens = autre.nom;
-    return segment;
-  }
-  const garde = fichier.ordre.sens.find((x) => x.arrets.some((i) => fichier.arrets[i].nom === (segment.arretFin || segment.arretDepart)));
-  if (garde) segment.sens = garde.nom;
-  const noms = arretsDuSens(fichier, segment.sens).map((a) => a.nom);
-  if (noms.indexOf(segment.arretDepart) >= noms.indexOf(segment.arretFin)) segment.arretDepart = "";
-  return segment;
+  return ajusterSensSegment(segment, fichiers.get(segment.ligne));
 }
 
 /** Directions déjà saisies pour une ligne, dans toutes les courses : proposées pendant la saisie. */
@@ -250,7 +237,11 @@ function carteSegment(s, i) {
   }), "Choisir une ligne");
 
   const champSens = fichier?.ordre
-    ? choixSelect(id("sens"), fichier.ordre.sens.map((x) => ({ valeur: x.nom, texte: x.nom })), s.sens || "", (v) => changer(() => {
+    ? choixSelect(id("sens"), [
+      ...fichier.ordre.sens.map((x) => ({ valeur: x.nom, texte: x.nom })),
+      // Direction saisie avant que la ligne ait ses sens officiels : gardée telle quelle
+      ...(s.sens && !fichier.ordre.sens.some((x) => x.nom === s.sens) ? [{ valeur: s.sens, texte: `${s.sens} (saisie à la main)` }] : []),
+    ], s.sens || "", (v) => changer(() => {
       s.sens = v || null;
       const noms = new Set(arretsDuSens(fichier, s.sens).map((a) => a.nom));
       if (!noms.has(s.arretDepart)) s.arretDepart = "";

@@ -52,13 +52,14 @@ Lignes et arrêts : jeu « Arrêts et lignes associées » d'Île-de-France Mobi
 
 ## Mettre à jour les données
 
-1. Télécharger l'export CSV du jeu « Arrêts et lignes associées » sur data.iledefrance-mobilites.fr et l'enregistrer sous `data/brut/arrets-lignes.csv` (ce dossier n'est pas versionné).
-2. Générer les données :
+Les données viennent d'Île-de-France Mobilités : le CSV « Arrêts et lignes associées » (lignes, arrêts, communes) et le GTFS des horaires (ordre des arrêts, directions, départs). Depuis un poste qui a accès à data.iledefrance-mobilites.fr et eu.ftp.opendatasoft.com :
 
-   ```bash
-   .venv/bin/python scripts/construire_donnees.py
-   ```
+```bash
+.venv/bin/python scripts/construire_donnees.py --telecharger
+```
 
-3. Lancer les tests, puis versionner `static/donnees/`.
+La commande retélécharge les deux fichiers dans `data/brut/` (non versionné, le CSV précédent est gardé), puis régénère `static/donnees/`. Lire les lignes « Attention » qu'elle affiche (par exemple des lignes du GTFS absentes du CSV), lancer les tests, puis versionner `static/donnees/`.
+
+Licences : lignes et arrêts sous ODbL ; horaires sous Licence Mobilités (ODbL avec conditions particulières). La source est citée dans l'application.
 
 L'ordre vérifié des arrêts d'une ligne se décrit dans `data/ordres/<ligne>.json` (voir `data/ordres/394.json`).

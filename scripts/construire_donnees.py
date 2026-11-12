@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Génère les données de l'application à partir du jeu « Arrêts et lignes associées »
-d'Île-de-France Mobilités (données ouvertes, licence ODbL).
+"""Génère les données de l'application à partir de deux jeux d'Île-de-France Mobilités :
+le CSV « Arrêts et lignes associées » (licence ODbL) et le GTFS des horaires (Licence Mobilités).
 
-Entrées :
-    data/brut/arrets-lignes.csv   export CSV du jeu (séparateur « ; »), non versionné
-    data/ordres/*.json            ordre vérifié des arrêts de certaines lignes (fiches horaires)
+Entrées (dossier data/brut/, non versionné) :
+    arrets-lignes.csv             lignes, arrêts, coordonnées, communes
+    IDFM-gtfs.zip                 horaires : ordre des arrêts, sens, destinations, passages par heure
+Entrées versionnées :
+    data/ordres/*.json            ordre vérifié de certaines lignes (fiches horaires) : sert de nom
+                                  d'arrêt et de contrôle du GTFS
     data/corrections_noms.json    fautes de frappe du jeu corrigées dans les noms affichés
 
 Sorties :
     static/donnees/lignes.json        index de toutes les lignes (bus, RER, métro, tramway…)
-    static/donnees/lignes/<id>.json   une ligne de bus : arrêts, ordre s'il est connu,
-                                      correspondances jusqu'à 300 mètres avec leur distance
-
-Le jeu ne donne ni l'ordre des arrêts, ni le sens, ni les horaires. Sans fichier d'ordre,
-les arrêts d'une ligne sont rangés par ordre alphabétique et la ligne est marquée
-« ordre non disponible » (champ `ordre` à null).
+    static/donnees/lignes/<id>.json   une ligne de bus : arrêts, sens (arrêts dans l'ordre, destination,
+                                      variantes, passages par heure), correspondances jusqu'à 300 mètres
 
 Usage :
-    python scripts/construire_donnees.py
-    python scripts/construire_donnees.py --csv chemin/vers/arrets-lignes.csv
+    python scripts/construire_donnees.py --telecharger   # retélécharge le CSV et le GTFS, puis génère
+    python scripts/construire_donnees.py                 # génère à partir des fichiers déjà téléchargés
+    python scripts/construire_donnees.py --sans-gtfs     # sans horaires (arrêts par ordre alphabétique)
 """
 
 import argparse
@@ -29,12 +29,22 @@ import math
 import re
 import sys
 import unicodedata
+import urllib.request
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
+try:  # lancé comme script (python scripts/construire_donnees.py) ou comme module (tests)
+    from scripts.lire_gtfs import LICENCE_HORAIRES, lire_gtfs
+except ImportError:
+    from lire_gtfs import LICENCE_HORAIRES, lire_gtfs
+
 RACINE = Path(__file__).resolve().parent.parent
 CSV_DEFAUT = RACINE / "data" / "brut" / "arrets-lignes.csv"
+GTFS_DEFAUT = RACINE / "data" / "brut" / "IDFM-gtfs.zip"
+URL_CSV = "https://data.iledefrance-mobilites.fr/api/explore/v2.1/catalog/datasets/arrets-lignes/exports/csv?delimiter=%3B"
+URL_GTFS = "https://eu.ftp.opendatasoft.com/stif/GTFS/IDFM-gtfs.zip"
+VARIANTES_MAXIMUM = 5      # variantes d'un sens gardées dans les fichiers (les plus fréquentes)
 ORDRES_DEFAUT = RACINE / "data" / "ordres"
 CORRECTIONS_DEFAUT = RACINE / "data" / "corrections_noms.json"
 SORTIE_DEFAUT = RACINE / "static" / "donnees"
@@ -114,9 +124,16 @@ def libelle(mode, nom_court, nom_long):
 # --------------------------------------------------------------------------------------
 # Lecture
 # --------------------------------------------------------------------------------------
+# L'export de l'API d'Île-de-France Mobilités nomme certaines colonnes autrement (en minuscules, « id »).
+COLONNES = {"id": "route_id", "operatorname": "OperatorName", "shortname": "shortName", "bookingrules": "bookingRules",
+            "nom_commune": "Nom_commune", "pointgeo": "Pointgeo", "code_insee": "Code_insee"}
+
+
 def charger_csv(chemin):
     with open(chemin, encoding="utf-8-sig", newline="") as f:
-        rangees = list(csv.DictReader(f, delimiter=";"))
+        lecteur = csv.reader(f, delimiter=";")
+        entetes = [COLONNES.get(c.strip(), c.strip()) for c in next(lecteur, [])]
+        rangees = [dict(zip(entetes, valeurs)) for valeurs in lecteur if valeurs]
     if not rangees:
         sys.exit(f"Le fichier {chemin} est vide.")
     attendues = {"route_id", "route_long_name", "stop_id", "stop_name", "stop_lon", "stop_lat",
@@ -317,6 +334,112 @@ def appliquer_ordre(arrets, ordre):
 
 
 # --------------------------------------------------------------------------------------
+# Ordre des arrêts, sens et passages : GTFS
+# --------------------------------------------------------------------------------------
+def ajouter_quais_gtfs(ligne, sens_gtfs, arrets_gtfs):
+    """Ajoute à la ligne les arrêts de ses parcours GTFS absents du CSV. Renvoie leur nombre."""
+    existants = list(ligne["quais"].values())
+    ajoutes = 0
+    for sens in sens_gtfs:
+        for parcours in [sens["parcours"]] + [v["parcours"] for v in sens["variantes"][:VARIANTES_MAXIMUM]]:
+            for stop_id in parcours:
+                if stop_id in ligne["quais"] or stop_id not in arrets_gtfs:
+                    continue
+                a = arrets_gtfs[stop_id]
+                voisin = min(existants, key=lambda q: haversine(q["lat"], q["lon"], a["lat"], a["lon"]), default=None)
+                commune = voisin["commune"] if voisin and haversine(voisin["lat"], voisin["lon"], a["lat"], a["lon"]) <= 1000 else ""
+                ligne["quais"][stop_id] = {"id": stop_id, "nom": a["nom"], "lat": a["lat"], "lon": a["lon"], "commune": commune}
+                ajoutes += 1
+    return ajoutes
+
+
+def sens_depuis_gtfs(arrets, sens_gtfs):
+    """Sens d'une ligne d'après le GTFS : suites d'arrêts (objets de `arrets`), destination, variantes, passages."""
+    par_quai = {q["id"]: a for a in arrets for q in a["quais"]}
+
+    def suite(parcours):
+        resultat = []
+        for stop_id in parcours:
+            a = par_quai.get(stop_id)
+            if a is not None and (not resultat or resultat[-1] is not a):
+                resultat.append(a)
+        return resultat
+
+    sens = []
+    for s in sens_gtfs:
+        principal = suite(s["parcours"])
+        if len(principal) < 2:
+            continue
+        destination = s["destination"] or principal[-1]["nom"]
+        variantes = []
+        for v in s["variantes"]:
+            arrets_variante = suite(v["parcours"])
+            if len(arrets_variante) >= 2 and arrets_variante != principal and len(variantes) < VARIANTES_MAXIMUM:
+                variantes.append({"destination": v["destination"] or arrets_variante[-1]["nom"], "suite": arrets_variante, "trajets": v["trajets"]})
+        sens.append({
+            "nom": f"vers {destination}",
+            "destination": destination,
+            "directionId": s["directionId"],
+            "suite": principal,
+            "trajets": s["trajets"],
+            "trajetsTotal": s["trajetsTotal"],
+            "variantes": variantes,
+            "jour": s["jour"],
+        })
+    noms = defaultdict(int)
+    for x in sens:
+        noms[x["nom"]] += 1
+    for x in sens:  # deux sens vers la même destination (boucle) : on les numérote
+        if noms[x["nom"]] > 1:
+            x["nom"] = f"{x['nom']} (sens {x['directionId']})"
+    return sens
+
+
+def ranger_selon_sens(arrets, sens):
+    """Tous les arrêts dans l'ordre des sens (voir ordre_general) ; les arrêts hors parcours à la fin."""
+    general = ordre_general([{"arrets": [id(a) for a in x["suite"]]} for x in sens])
+    par_id = {id(a): a for a in arrets}
+    ranges = [par_id[i] for i in general]
+    vus = set(general)
+    ranges += [a for a in arrets if id(a) not in vus]
+    return ranges
+
+
+def verifier_avec_gtfs(nom_sens, indices_fiche, sens_gtfs, position):
+    """Rapproche un sens de la fiche horaire du sens GTFS le plus semblable. Renvoie (sens GTFS, vérification)."""
+    meilleur, ratio = None, -1.0
+    for x in sens_gtfs:
+        indices = [position[id(a)] for a in x["suite"]]
+        r = difflib.SequenceMatcher(None, indices_fiche, indices, autojunk=False).ratio()
+        if r > ratio:
+            meilleur, ratio = x, r
+    if meilleur is None:
+        return None, {"identique": False, "texte": "Aucun sens correspondant dans le GTFS."}
+    indices = [position[id(a)] for a in meilleur["suite"]]
+    if indices == indices_fiche:
+        return meilleur, {"identique": True, "texte": f"Identique au GTFS (destination « {meilleur['destination']} », direction_id {meilleur['directionId']})."}
+    return meilleur, {"identique": False, "texte": f"Différent du GTFS (destination « {meilleur['destination']} », ressemblance {round(100 * ratio)} %)."}
+
+
+def sortie_sens(x, position, nom=None, indices=None, verification=None):
+    """Sens tel qu'il est écrit dans le fichier de la ligne."""
+    sortie = {"nom": nom or x["nom"], "arrets": indices if indices is not None else [position[id(a)] for a in x["suite"]]}
+    if x is not None:
+        sortie.update({
+            "destination": x["destination"],
+            "directionId": x["directionId"],
+            "trajets": x["trajets"],
+            "trajetsTotal": x["trajetsTotal"],
+            "variantes": [{"destination": v["destination"], "arrets": [position[id(a)] for a in v["suite"]], "trajets": v["trajets"]}
+                          for v in x["variantes"]],
+            "jour": x["jour"],
+        })
+    if verification:
+        sortie["verification"] = verification
+    return sortie
+
+
+# --------------------------------------------------------------------------------------
 # Correspondances
 # --------------------------------------------------------------------------------------
 class IndexSpatial:
@@ -361,19 +484,51 @@ def calculer_correspondances(ligne, arret, index, desserte, cle_tri):
 # --------------------------------------------------------------------------------------
 # Construction
 # --------------------------------------------------------------------------------------
-def construire(rangees, ordres, corrections=None):
-    """Renvoie (index, fichiers par ligne, avertissements)."""
+def construire(rangees, ordres, corrections=None, gtfs=None):
+    """Renvoie (index, fichiers par ligne, avertissements, informations). `gtfs` : résultat de lire_gtfs ou None."""
     lignes = construire_lignes(rangees)
     avertissements = []
+    infos = {"quaisAjoutes": 0, "lignesAvecSens": 0, "verifications": []}
+    source_gtfs = f"GTFS d'Île-de-France Mobilités, horaires du {gtfs['periode']['du']} au {gtfs['periode']['au']}" if gtfs and gtfs.get("periode") else None
 
     # Arrêts de toutes les lignes (les noms servent aussi pour les correspondances)
     for ligne in lignes.values():
+        sens_gtfs = gtfs["lignes"].get(ligne["route_id"], []) if gtfs and ligne["mode"] in MODES_ENQUETES else []
+        if sens_gtfs:
+            infos["quaisAjoutes"] += ajouter_quais_gtfs(ligne, sens_gtfs, gtfs["arrets"])
         ligne["arrets"] = regrouper_quais(list(ligne["quais"].values()), corrections=corrections)
         ligne["ordre"] = None
+        sens = sens_depuis_gtfs(ligne["arrets"], sens_gtfs) if sens_gtfs else []
         ordre = ordres.get(ligne["route_id"])
         if ordre:
-            ligne["arrets"], ligne["ordre"], avert = appliquer_ordre(ligne["arrets"], ordre)
+            # Fiche horaire vérifiée : elle donne l'ordre et les noms ; le GTFS la contrôle et ajoute les passages.
+            ligne["arrets"], ordre_fiche, avert = appliquer_ordre(ligne["arrets"], ordre)
             avertissements += [f"Ligne {ligne['libelle']} : {a}" for a in avert]
+            position = {id(a): i for i, a in enumerate(ligne["arrets"])}
+            sortie = []
+            for s in ordre_fiche["sens"]:
+                if sens:
+                    x, verification = verifier_avec_gtfs(s["nom"], s["arrets"], sens, position)
+                    infos["verifications"].append(f"Ligne {ligne['libelle']}, {s['nom']} : {verification['texte']}")
+                    if not verification["identique"]:
+                        avertissements.append(f"Ligne {ligne['libelle']}, {s['nom']} : {verification['texte']}")
+                    sortie.append(sortie_sens(x, position, nom=s["nom"], indices=s["arrets"], verification=verification))
+                else:
+                    sortie.append(s)
+            source = ordre_fiche["source"] + (" ; contrôlé avec le " + source_gtfs if sens else "")
+            ligne["ordre"] = {"source": source, "sens": sortie}
+        elif sens:
+            ligne["arrets"] = ranger_selon_sens(ligne["arrets"], sens)
+            position = {id(a): i for i, a in enumerate(ligne["arrets"])}
+            ligne["ordre"] = {"source": source_gtfs, "sens": [sortie_sens(x, position) for x in sens]}
+        if ligne["ordre"]:
+            infos["lignesAvecSens"] += 1
+    if gtfs:
+        absentes = sorted(set(gtfs["lignes"]) - set(lignes))
+        infos["absentesDuCsv"] = absentes
+        if absentes:
+            avertissements.append(f"{len(absentes)} ligne(s) du GTFS absente(s) du CSV, par exemple {', '.join(absentes[:5])} : "
+                                  "le CSV est peut-être incomplet, comparer avec le précédent avant de publier.")
     for route_id in sorted(set(ordres) - set(lignes)):
         avertissements.append(f"{ordres[route_id]['fichier']} : ligne {route_id} absente du jeu de données")
 
@@ -433,10 +588,10 @@ def construire(rangees, ordres, corrections=None):
             "fichier": ligne["id"] in fichiers,
             "communes": communes,
         })
-    return index_lignes, fichiers, avertissements
+    return index_lignes, fichiers, avertissements, infos
 
 
-def ecrire(sortie, index_lignes, fichiers, nom_csv, nombre_rangees, date_generation):
+def ecrire(sortie, index_lignes, fichiers, nom_csv, nombre_rangees, date_generation, horaires=None):
     sortie = Path(sortie)
     dossier_lignes = sortie / "lignes"
     dossier_lignes.mkdir(parents=True, exist_ok=True)
@@ -454,6 +609,7 @@ def ecrire(sortie, index_lignes, fichiers, nom_csv, nombre_rangees, date_generat
             "fichier": nom_csv,
             "rangees": nombre_rangees,
         },
+        "horaires": horaires,
         "genereLe": date_generation,
         "rayonMaximum": RAYON_MAXIMUM,
         "lignes": index_lignes,
@@ -462,28 +618,71 @@ def ecrire(sortie, index_lignes, fichiers, nom_csv, nombre_rangees, date_generat
         json.dump(index, f, ensure_ascii=False, separators=(",", ":"))
 
 
+def telecharger(url, destination):
+    """Télécharge `url` dans `destination` (fichier temporaire puis renommage)."""
+    destination = Path(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporaire = destination.with_name(destination.name + ".partiel")
+    print(f"Téléchargement de {url}…")
+    with urllib.request.urlopen(url, timeout=600) as reponse, open(temporaire, "wb") as f:
+        while bloc := reponse.read(1 << 20):
+            f.write(bloc)
+    temporaire.replace(destination)
+    print(f"  {destination} : {destination.stat().st_size / 1e6:.1f} mégaoctets")
+
+
 def main(arguments=None):
     analyseur = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     analyseur.add_argument("--csv", default=CSV_DEFAUT, help="export CSV du jeu « Arrêts et lignes associées »")
+    analyseur.add_argument("--gtfs", default=GTFS_DEFAUT, help="archive GTFS d'Île-de-France Mobilités")
+    analyseur.add_argument("--sans-gtfs", action="store_true", help="générer sans horaires (arrêts par ordre alphabétique)")
+    analyseur.add_argument("--telecharger", action="store_true", help="retélécharger le CSV et le GTFS avant de générer")
     analyseur.add_argument("--ordres", default=ORDRES_DEFAUT, help="dossier des ordres d'arrêts connus")
     analyseur.add_argument("--corrections", default=CORRECTIONS_DEFAUT, help="corrections des noms d'arrêts")
     analyseur.add_argument("--sortie", default=SORTIE_DEFAUT, help="dossier de sortie")
     args = analyseur.parse_args(arguments)
 
+    if args.telecharger:
+        if Path(args.csv).is_file():  # le précédent CSV est gardé : l'export d'IDFM a déjà manqué des lignes
+            Path(args.csv).replace(Path(args.csv).with_name("arrets-lignes.precedent.csv"))
+        telecharger(URL_CSV, args.csv)
+        if not args.sans_gtfs:
+            telecharger(URL_GTFS, args.gtfs)
     if not Path(args.csv).is_file():
         sys.exit(f"CSV introuvable : {args.csv}\n"
-                 "Le télécharger depuis data.iledefrance-mobilites.fr (jeu « Arrêts et lignes associées », "
-                 "export CSV) et le placer dans data/brut/arrets-lignes.csv.")
-    rangees = charger_csv(args.csv)
-    index_lignes, fichiers, avertissements = construire(rangees, charger_ordres(args.ordres),
-                                                        charger_corrections(args.corrections))
-    ecrire(args.sortie, index_lignes, fichiers, Path(args.csv).name, len(rangees), date.today().isoformat())
+                 "Lancer « python scripts/construire_donnees.py --telecharger » depuis un poste qui a accès à "
+                 "data.iledefrance-mobilites.fr et eu.ftp.opendatasoft.com.")
+    gtfs = None
+    if not args.sans_gtfs:
+        if not Path(args.gtfs).is_file():
+            sys.exit(f"GTFS introuvable : {args.gtfs}\n"
+                     "Lancer avec --telecharger, ou avec --sans-gtfs pour générer sans horaires.")
+        print("Lecture du GTFS…")
+        gtfs = lire_gtfs(args.gtfs)
 
+    rangees = charger_csv(args.csv)
+    index_lignes, fichiers, avertissements, infos = construire(rangees, charger_ordres(args.ordres),
+                                                               charger_corrections(args.corrections), gtfs)
+    horaires = None
+    if gtfs:
+        horaires = {
+            "jeu": "Horaires au format GTFS",
+            "producteur": "Île-de-France Mobilités",
+            "licence": LICENCE_HORAIRES,
+            "fichier": Path(args.gtfs).name,
+            "periode": gtfs["periode"],
+            "jourReference": gtfs["jourReference"],
+        }
+    ecrire(args.sortie, index_lignes, fichiers, Path(args.csv).name, len(rangees), date.today().isoformat(), horaires)
+
+    for v in infos["verifications"]:
+        print("Contrôle :", v)
     for a in avertissements:
         print("Attention :", a)
     ordonnees = sum(1 for l in index_lignes if l["ordre"])
     print(f"{len(index_lignes)} lignes dans l'index, {len(fichiers)} fichiers de ligne, "
-          f"{ordonnees} ligne(s) avec ordre des arrêts connu.")
+          f"{ordonnees} ligne(s) avec ordre des arrêts connu"
+          + (f", {infos['quaisAjoutes']} arrêt(s) ajouté(s) depuis le GTFS, jour de référence {gtfs['jourReference']}." if gtfs else "."))
 
 
 if __name__ == "__main__":

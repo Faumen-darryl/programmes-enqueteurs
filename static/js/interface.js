@@ -319,3 +319,24 @@ function afficherNotificationEnAttente() {
 }
 
 afficherNotificationEnAttente();
+
+// ---------- Dates et sources des données ----------
+
+/** « 2026-12-01 » -> « mardi 1 décembre 2026 » */
+export function dateTexte(iso, avecJour = true) {
+  if (!iso) return "";
+  const [a, m, j] = iso.split("-").map(Number);
+  const options = { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" };
+  if (avecJour) options.weekday = "long";
+  return new Intl.DateTimeFormat("fr-FR", options).format(new Date(Date.UTC(a, m - 1, j)));
+}
+
+/** Complète la mention de la barre latérale avec les dates des données (index de lignes.json). */
+export function afficherSources(index) {
+  const zone = document.getElementById("mention-donnees");
+  if (!zone || !index) return;
+  const h = index.horaires;
+  zone.textContent = h?.periode
+    ? `Données : Île-de-France Mobilités. Lignes et arrêts sous licence ODbL ; horaires (GTFS) du ${dateTexte(h.periode.du, false)} au ${dateTexte(h.periode.au, false)}, sous Licence Mobilités. Générées le ${dateTexte(index.genereLe, false)}.`
+    : `Données : Île-de-France Mobilités, lignes et arrêts sous licence ODbL. Générées le ${dateTexte(index.genereLe, false)}.`;
+}

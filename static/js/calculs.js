@@ -343,25 +343,63 @@ export function suggestions(course, fichiers, nombre = 3) {
 }
 
 /**
+ * Choisit la direction d'un segment où l'arrêt de départ précède l'arrêt de fin, puis complète l'arrêt manquant :
+ * départ vide -> premier arrêt de la direction ; fin vide -> terminus. Sans ordre connu, le segment est inchangé.
+ * Si l'arrêt de départ est vide, on prend la direction où l'arrêt de fin vient le plus tard (le plus long trajet
+ * avant le pivot) ; si l'arrêt de fin est vide, celle où le départ vient le plus tôt.
+ */
+export function ajusterSens(segment, fichier) {
+  if (!fichier?.ordre?.sens.length) return segment;
+  const noms = (sens) => sens.arrets.map((i) => fichier.arrets[i].nom);
+  const evaluer = (sens) => {
+    const liste = noms(sens);
+    const d = segment.arretDepart ? liste.indexOf(segment.arretDepart) : null;
+    const f = segment.arretFin ? liste.indexOf(segment.arretFin) : null;
+    if (d === -1 || f === -1) return null;
+    if (d !== null && f !== null) return d < f ? 0 : null;
+    if (d === null && f !== null) return f >= 1 ? -f : null;      // départ à compléter : plus la fin est loin, mieux c'est
+    if (d !== null && f === null) return d < liste.length - 1 ? d : null;
+    return 0;
+  };
+  const candidats = fichier.ordre.sens.map((sens) => [sens, evaluer(sens)]).filter(([, note]) => note !== null);
+  const actuel = candidats.find(([sens]) => sens.nom === segment.sens);
+  const choisi = (segment.arretDepart && segment.arretFin && actuel)
+    ? actuel
+    : candidats.sort((x, y) => x[1] - y[1] || Number(y[0].nom === segment.sens) - Number(x[0].nom === segment.sens))[0];
+  if (!choisi) {
+    // Aucune direction ne convient : on garde celle qui contient l'arrêt de fin (ou de départ) et on vide l'autre.
+    const garde = fichier.ordre.sens.find((sens) => noms(sens).includes(segment.arretFin || segment.arretDepart));
+    if (garde) segment.sens = garde.nom;
+    if (segment.arretDepart && segment.arretFin) segment.arretDepart = "";
+    return segment;
+  }
+  segment.sens = choisi[0].nom;
+  const liste = noms(choisi[0]);
+  if (!segment.arretDepart && segment.arretFin !== liste[0]) segment.arretDepart = liste[0];
+  if (!segment.arretFin && segment.arretDepart !== liste[liste.length - 1]) segment.arretFin = liste[liste.length - 1];
+  return segment;
+}
+
+/**
  * Segments pré-remplis d'un programme à partir d'une suggestion. Le programme commence à 6 heures ;
  * chaque segment dure le temps que les quotas par défaut atteignent son nombre d'enquêtes.
+ * Avec un pivot, le premier segment finit au pivot et le second y commence ; la direction est choisie en conséquence.
  */
 export function segmentsSuggeres(suggestion, fichiers, course, debut = HEURE_DEBUT_DEFAUT) {
   let heure = debut;
   return suggestion.segments.map((s, i) => {
     const fichier = fichiers.get(s.ligne);
-    const sens = fichier?.ordre ? fichier.ordre.sens[0].nom : null;
-    const arrets = fichier ? arretsDuSens(fichier, sens) : [];
     const segment = {
       ligne: s.ligne,
-      sens,
-      arretDepart: fichier?.ordre ? arrets[0]?.nom ?? "" : "",
-      arretFin: fichier?.ordre ? arrets[arrets.length - 1]?.nom ?? "" : "",
+      sens: fichier?.ordre ? fichier.ordre.sens[0].nom : null,
+      arretDepart: "",
+      arretFin: "",
       debut: heure,
       fin: finPourObjectif(heure, s.enquetes),
     };
     if (suggestion.pivot && i === 0) segment.arretFin = suggestion.pivot.arretA;
     if (suggestion.pivot && i === 1) segment.arretDepart = suggestion.pivot.arretB;
+    ajusterSens(segment, fichier);
     segment.quotas = quotasPourObjectif(segment, s.enquetes);
     segment.enquetes = s.enquetes;
     heure = segment.fin;

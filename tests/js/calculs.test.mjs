@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  accesFerre, decoupage, distanceEntreArrets, enquetesSegment, etatLignes, finPourObjectif, pivotsEntre,
+  accesFerre, ajusterSens, decoupage, distanceEntreArrets, enquetesSegment, etatLignes, finPourObjectif, pivotsEntre,
   programmesNecessaires, quotasConserves, quotasParDefaut, quotasPourObjectif, resumeCourse, segmentsSuggeres,
   suggestions, texteDuree, tranchesHoraires, verifierProgramme,
 } from "../../static/js/calculs.js";
@@ -211,4 +211,30 @@ test("recherche de ligne : numéro exact d'abord, puis commune", () => {
   assert.deepEqual(rechercherLignes(lignes, "chatillon").resultats.map((l) => l.id), ["2"]);
   assert.deepEqual(rechercherLignes(lignes, "14 transdev").resultats.map((l) => l.id), ["3"]);
   assert.equal(rechercherLignes(lignes, "").total, 0);
+});
+
+// Ligne à deux sens, comme la 14 : Division Leclerc est le premier arrêt d'un sens et le dernier de l'autre
+const L14_SENS = {
+  id: "C00350", libelle: "14",
+  ordre: { source: "GTFS", sens: [{ nom: "vers Croix de Berny", arrets: [0, 1, 2] }, { nom: "vers Division Leclerc", arrets: [2, 1, 0] }] },
+  arrets: [{ nom: "Division Leclerc" }, { nom: "Stade du Panorama" }, { nom: "Croix de Berny" }],
+};
+
+test("direction choisie pour finir au pivot, départ complété", () => {
+  const s = ajusterSens({ sens: "vers Croix de Berny", arretDepart: "", arretFin: "Division Leclerc" }, L14_SENS);
+  assert.deepEqual(s, { sens: "vers Division Leclerc", arretDepart: "Croix de Berny", arretFin: "Division Leclerc" });
+});
+
+test("direction choisie pour partir du pivot, terminus complété", () => {
+  const s = ajusterSens({ sens: "vers Division Leclerc", arretDepart: "Division Leclerc", arretFin: "" }, L14_SENS);
+  assert.deepEqual(s, { sens: "vers Croix de Berny", arretDepart: "Division Leclerc", arretFin: "Croix de Berny" });
+});
+
+test("direction gardée quand elle convient, changée sinon", () => {
+  const ok = ajusterSens({ sens: "vers Division Leclerc", arretDepart: "Croix de Berny", arretFin: "Stade du Panorama" }, L14_SENS);
+  assert.equal(ok.sens, "vers Division Leclerc");
+  const autre = ajusterSens({ sens: "vers Division Leclerc", arretDepart: "Division Leclerc", arretFin: "Croix de Berny" }, L14_SENS);
+  assert.equal(autre.sens, "vers Croix de Berny");
+  const sansOrdre = { sens: "vers Antony", arretDepart: "", arretFin: "X" };
+  assert.deepEqual(ajusterSens({ ...sansOrdre }, { ordre: null }), sansOrdre);
 });

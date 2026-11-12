@@ -3,7 +3,7 @@
 import { accesFerre, arretsDuSens, FAMILLES_FERREES, pluriel, RAYON_PIVOT } from "./calculs.js";
 import { chargerIndex, chargerLigne, cleNaturelle } from "./donnees.js";
 import {
-  bouton, creerChoixLigne, descriptionLigne, el, etatAttente, etatVide, etiquette, etiquettesLigne, hash, icone,
+  afficherSources, bouton, creerChoixLigne, dateTexte, descriptionLigne, el, etatAttente, etatVide, etiquette, etiquettesLigne, hash, icone,
   lireHash, message, notifier, pastille, remplacerHash, texteDistance, titreLigne, urls, vider,
 } from "./interface.js";
 import { lireCourses, lirePivotRetenu, retenirPivot } from "./stockage.js";
@@ -43,6 +43,7 @@ async function demarrer() {
   vider(contenu, etatAttente());
   try {
     index = await chargerIndex();
+    afficherSources(index);
   } catch (erreur) {
     vider(contenu, message(`Impossible de charger la liste des lignes : ${erreur.message}`, "alerte"));
     return;
@@ -123,6 +124,32 @@ function rendreAccueil(avertissement) {
 
 // ---------- Ligne ----------
 
+function etiquetteOrdre(f) {
+  if (!f.ordre) return etiquette("Ordre non disponible", "alerte");
+  if (f.ordre.source.startsWith("Fiche")) {
+    const identique = f.ordre.sens.every((s) => s.verification?.identique);
+    return etiquette(identique ? "Fiche horaire, identique aux horaires officiels" : "Ordre de la fiche horaire", "succes");
+  }
+  return etiquette("Ordre des horaires officiels", "succes");
+}
+
+/** Départs du jour de référence et variantes de chaque sens affiché. */
+function infosSens(f, nomSens) {
+  if (!f.ordre?.sens.some((s) => s.jour)) return null;
+  const jour = index.horaires?.jourReference;
+  const liste = f.ordre.sens.filter((s) => s.jour && (!nomSens || s.nom === nomSens));
+  return el("div", { class: "infos-sens" }, liste.map((s) => {
+    const extremites = (v) => `de ${f.arrets[v.arrets[0]]?.nom} à ${f.arrets[v.arrets[v.arrets.length - 1]]?.nom}`;
+    return el("div", { class: "infos-sens__sens" },
+      el("p", {},
+        el("strong", { text: s.nom }),
+        el("span", { text: s.jour.passages
+          ? ` : ${pluriel(s.jour.passages, "départ", "départs")} le ${dateTexte(jour)}, de ${s.jour.premier} à ${s.jour.dernier}.`
+          : ` : aucun départ le ${dateTexte(jour)}.` })),
+      s.variantes?.length ? el("p", { class: "texte-secondaire petit", text: `Autres parcours dans ce sens : ${s.variantes.map((v) => `${extremites(v)} (${pluriel(v.trajets, "trajet", "trajets")})`).join(" ; ")}. Les nombres de trajets portent sur toute la période des horaires.` }) : null);
+  }));
+}
+
 /** Correspondances d'un arrêt jusqu'à `rayon`, séparées en lignes ferrées et bus, une seule fois par libellé. */
 function correspondancesDe(arret, rayon) {
   const lourdes = new Map();
@@ -174,7 +201,7 @@ function rendreLigne() {
       el("div", { class: "entete-ligne__etiquettes" },
         etiquettesLigne(ligne),
         etiquette(`${fichier.arrets.length} arrêts`, "neutre"),
-        fichier.ordre ? etiquette("Ordre de la fiche horaire", "succes") : etiquette("Ordre non disponible", "alerte"))),
+        etiquetteOrdre(fichier))),
     el("div", { class: "entete-ligne__reglages" },
       fichier.ordre ? el("div", { class: "reglage" },
         el("span", { class: "etiquette-champ", text: "Direction" }),
@@ -198,6 +225,8 @@ function rendreLigne() {
           }),
           el("output", { for: "rayon", text: texteDistance(etat.rayon) })))));
 
+  const infos = infosSens(fichier, etat.sens);
+  if (infos) entete.append(infos);
   vider(contenu,
     entete,
     el("div", { class: "grille-ligne" },
